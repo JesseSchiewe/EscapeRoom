@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EscapeJS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <main class="layout">
+      <header class="hero panel">
+        <div class="hero-top">
+          <h1>EscapeJS</h1>
+          <button id="home-btn" class="home-btn hidden" aria-label="Back to scenarios">&#8592; Scenarios</button>
+        </div>
+        <p>
+          Pick a scenario, crack each lock, and escape. Your progress, unlocked locks,
+          and revealed clues are tracked in real time.
+        </p>
+      </header>
+
+      <section class="panel scenarios">
+        <h2>Scenarios</h2>
+        <div id="scenario-list" class="scenario-list"></div>
+      </section>
+
+      <section id="game-area" class="game-grid hidden" aria-live="polite">
+        <article class="panel status">
+          <h2 id="scenario-title">Scenario</h2>
+          <p id="scenario-description"></p>
+          <div class="progress-track" role="img" aria-label="Overall progress">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+          <p id="progress-text" class="progress-text">0% complete</p>
+          <p id="completion-banner" class="completion hidden">Escape complete. You made it out.</p>
+          <div id="timer-wrap" class="timer-wrap hidden">
+            <span class="timer-label">Time Remaining</span>
+            <div id="timer-display" class="timer-display">--:--</div>
+          </div>
+        </article>
+
+        <article class="panel locks">
+          <h2>Locks</h2>
+          <div id="locks-list" class="lock-list"></div>
+        </article>
+
+        <article class="panel clues">
+          <h2>Unleashed Clues</h2>
+          <ul id="clue-list" class="clue-list"></ul>
+        </article>
+
+        <article class="panel history">
+          <h2>Unlock History</h2>
+          <ul id="history-list" class="history-list"></ul>
+        </article>
+
+        <article id="score-panel" class="panel score-panel hidden" aria-live="polite">
+          <h2>Mission Complete</h2>
+          <div class="score-breakdown">
+            <div class="score-row"><span>Base Score</span><span id="sc-base">-</span></div>
+            <div class="score-row penalty"><span>Failed Attempts Penalty</span><span id="sc-attempts">-</span></div>
+            <div class="score-row penalty"><span>Hints Used Penalty</span><span id="sc-hints">-</span></div>
+            <div class="score-row bonus"><span>Time Bonus</span><span id="sc-time-bonus">-</span></div>
+            <div class="score-row total"><span>Final Score</span><span id="sc-total">-</span></div>
+          </div>
+          <div class="leaderboard-submit">
+            <h3>Submit to Leaderboard</h3>
+            <div class="form-row">
+              <input id="player-name-input" class="code-input" type="text" maxlength="30" placeholder="Your name" aria-label="Player name" />
+              <button id="submit-score-btn" class="select-btn">Submit</button>
+            </div>
+            <p id="submit-feedback" class="meta hidden"></p>
+          </div>
+          <div id="leaderboard-section">
+            <h3>Leaderboard</h3>
+            <table id="leaderboard-table" class="leaderboard">
+              <thead><tr><th>Rank</th><th>Name</th><th>Score</th><th>Time</th></tr></thead>
+              <tbody id="leaderboard-body"></tbody>
+            </table>
+            <p id="leaderboard-empty" class="meta">No entries yet.</p>
+          </div>
+        </article>
+      </section>
+
+      <div id="toast" class="toast hidden" aria-live="assertive"></div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  </body>
+</html>

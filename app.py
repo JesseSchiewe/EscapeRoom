@@ -1,0 +1,524 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import os
+from typing import Any
+
+from collections import defaultdict
+from flask import Flask, jsonify, render_template, request, session
+
+SCENARIOS: dict[str, dict[str, Any]] = {
+    "midnight-lab": {
+        "id": "midnight-lab",
+        "title": "Midnight Lab",
+        "description": "You are trapped in a private chemistry lab after hours. Crack each lock before security arrives.",
+        "difficulty": "Medium",
+        "time_limit_seconds": 1800,
+        "base_score": 10000,
+        "locks": [
+            {
+                "id": "door-panel",
+                "name": "Main Door Panel",
+                "prompt": "A smudged sticky note reads: 'Pi without decimals.' Enter a 4-digit code.",
+                "code": "3141",
+                "input_length": 4,
+                "clue": "The first code came from a famous math constant.",
+                "hint_after_failures": 2,
+                "hint_text": "Try the first four digits of pi.",
+                "unlock_message": "Door panel accepted. A drawer pops open with a brass key.",
+            },
+            {
+                "id": "specimen-safe",
+                "name": "Specimen Safe",
+                "prompt": "A lock dial says: 'Atomic number of Carbon + Neon = ____'. Enter a 2-digit code.",
+                "code": "16",
+                "input_length": 2,
+                "clue": "The safe opens with a hiss and reveals a UV flashlight.",
+                "hint_after_failures": 2,
+                "hint_text": "Carbon is 6, Neon is 10.",
+                "unlock_message": "Safe unlocked. The UV flashlight reveals a hidden exit map.",
+            },
+            {
+                "id": "exit-gate",
+                "name": "Emergency Exit Gate",
+                "prompt": "The map shows cardinal directions in order: North, East, South, West. Convert to keypad digits.",
+                "code": "2684",
+                "input_length": 4,
+                "clue": "Final gate opens and the alarm silences. You escaped Midnight Lab.",
+                "hint_after_failures": 3,
+                "hint_text": "On a keypad, N/E/S/W correspond to up/right/down/left.",
+                "unlock_message": "Exit gate unlocked. Fresh air and freedom.",
+            },
+        ],
+    },
+    "clocktower-heist": {
+        "id": "clocktower-heist",
+        "title": "Clocktower Heist",
+        "description": "Retrieve the stolen key from an ancient clocktower by solving timed mechanical locks.",
+        "difficulty": "Hard",
+        "time_limit_seconds": 2400,
+        "base_score": 12000,
+        "locks": [
+            {
+                "id": "gear-lock",
+                "name": "Gear Room Lock",
+                "prompt": "A brass plate reads: 'Quarter past six'. Enter as a 4-digit time.",
+                "code": "0615",
+                "input_length": 4,
+                "clue": "The gears align, revealing a pendulum token.",
+                "hint_after_failures": 2,
+                "hint_text": "Use HHMM with leading zero if needed.",
+                "unlock_message": "Gear lock clicks open. You hear the tower mechanisms sync.",
+            },
+            {
+                "id": "belfry-box",
+                "name": "Belfry Puzzle Box",
+                "prompt": "Count the bell strikes at noon and midnight combined.",
+                "code": "24",
+                "input_length": 2,
+                "clue": "The token fits into a hidden slot behind the bell.",
+                "hint_after_failures": 2,
+                "hint_text": "Noon is 12 strikes and midnight is 12 strikes.",
+                "unlock_message": "Puzzle box opens with a metallic chirp.",
+            },
+            {
+                "id": "vault-door",
+                "name": "Clocktower Vault Door",
+                "prompt": "The inscription says: 'Hours in 3 days'. Enter a 2-digit code.",
+                "code": "72",
+                "input_length": 2,
+                "clue": "Vault opens. The stolen key rests on velvet cloth.",
+                "hint_after_failures": 3,
+                "hint_text": "One day has 24 hours.",
+                "unlock_message": "Vault door unlocked. Mission complete.",
+            },
+        ],
+    },
+    "bunny-hoppers": {
+
+        "id": "bunny-hoppers",
+        "title": "Bunny Hoppers",
+        "description": "Oh no!!! I am HippityHop, and someone stole all of my eggs!\nPLEASE help me find all 7 eggs and return them to me using this basket\nto save the day and become my hero! I don't know where to start, but I\nremember hearing music from the other room.",
+        "difficulty": "Easy",
+        "time_limit_seconds": 2700,
+        "base_score": 7000,
+        "locks": [
+            {
+                "id": "egg-1",
+                "name": "Egg 1 – Music",
+                "prompt": "I remember hearing music before my eggs were stolen. Perhaps it holds the answer?",
+                "sounds": ["F4", "A3", "C4", "E4"],
+                "code": "FACE",
+                "input_length": 4,
+                "clue": "The notes spell out the word 'FACE'.",
+                "hint_after_failures": 2,
+                "hint_text": "Think about the musical notes on the staff.",
+                "unlock_message": "You found the first egg!",
+            },
+            {
+                "id": "egg-2",
+                "name": "Egg 2 – Kitchen",
+                "prompt": "When the kitchen gets dirty, I must do some cleaning.\nI must wash pots and pans until they are gleaming!\nBut then I must find a good place to dry them\noh where could I find such a useful type of item?\n\nMaybe I could find something to attract the next clue?",
+                "code": "SEEK",
+                "input_length": 4,
+                "clue": "The letters spell out the word 'SEEK'.",
+                "hint_after_failures": 2,
+                "hint_text": "Think about what you need to do to find the next clue.",
+                "unlock_message": "You found the second egg!",
+            },
+            {
+                "id": "egg-3",
+                "name": "Egg 3 – PR",
+                "prompt": "I like to play games, that much is a fact, there is one in particular that makes me say \"Kwak\"!\nBut when I play this game, my preference is thus:\n\nRoxy, Cap'n, Skully, Hook.",
+                "code": "7214",
+                "input_length": 4,
+                "clue": "The numbers correspond to the value of the characters.",
+                "hint_after_failures": 2,
+                "hint_text": "Think about the order of the characters' initials.",
+                "unlock_message": "You found the third egg!",
+            },
+            {
+                "id": "egg-4",
+                "name": "Egg 4 – Pigs",
+                "prompt": "TAKE SHELTER!!! The forecast said there would be strong winds coming from the west in the town of pigs, but the building material was affected differently.\nWhile any brick houses and the pigs themselves are not affected by the wind, stick houses would be moved once and straw houses would move double.\nAny exposed pigs would be eaten by the big bad wolf!\nI wonder how many pigs will survive, how many the wolf will eat, what was the total number of pigs, and how many houses are left on solid ground",
+                "code": "2352",
+                "input_length": 4,
+                "clue": "The numbers correspond to the number of pigs after the winds move the houses.",
+                "hint_after_failures": 2,
+                "hint_text": "Think about what will happen after the winds blow.",
+                "unlock_message": "You found the fourth egg!",
+            },
+            {
+                "id": "egg-5",
+                "name": "Egg 5 – Placeholder",
+                "prompt": "I like to read books\nThat is just how it goes\nBut where did I stop reading?\nFor PETE's sake, who knows?",
+                "code": "CATZ",
+                "input_length": 4,
+                "clue": "The letters spell out the name 'PETE'.",
+                "hint_after_failures": 2,
+                "hint_text": "Think about the name mentioned in the poem.",
+                "unlock_message": "You found the fifth egg!",
+            },
+            {
+                "id": "egg-6",
+                "name": "Egg 6 – Amazing",
+                "prompt": "Perhaps this will give you something fun to do.\nAt the end of it all, you might find a clue!",
+                "image_url": "/static/images/Maze1.png",
+                "code": "LNJY",
+                "input_length": 4,
+                "clue": "The solution to the maze contains the letters for the code.",
+                "hint_after_failures": 2,
+                "hint_text": "Solve the maze to find the code.",
+                "unlock_message": "You found the sixth egg!",
+            },
+            {
+                "id": "egg-7",
+                "name": "Egg 7 – Tied",
+                "prompt": "Sometimes I am leashed and fairly restricted,\nI am unable to reach some of the items depicted.\nBut I can always take joy in accessing one\nand that item can be a whole lot of fun.",
+                "code": "BUZZ",
+                "input_length": 4,
+                "clue": "The stuffy can only reach one of the toys. What is it?",
+                "hint_after_failures": 2,
+                "hint_text": "What is still accessible to the stuffed animal even when it's tied up?",
+                "unlock_message": "You found the seventh egg!",
+            },
+            {
+                "id": "FINAL",
+                "name": "Final Stage – Return the Basket",
+                "prompt": "Now return my eggs to the place you departed, \nYou will have to go back to where you _____!",
+                "code": "STARTED",
+                "input_length": 6,
+                "clue": "Fill in the blank. What rhymes with 'departed' and describes how the beginning where you met HippityHop?",
+                "hint_after_failures": 2,
+                "hint_text": "Think about the beginning of your journey.",
+                "unlock_message": "You returned all of the eggs, you are my HERO!",
+            },
+        ],
+    },
+}
+
+SCENARIO_ORDER = ["bunny-hoppers", "midnight-lab", "clocktower-heist"]
+
+LEADERBOARD: dict[str, list] = defaultdict(list)
+
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+    app.secret_key = os.getenv("FLASK_SECRET_KEY", "escapejs-dev-secret")
+
+    @app.route("/")
+    def index() -> str:
+        return render_template("index.html")
+
+    @app.get("/api/scenarios")
+    def list_scenarios():
+        scenarios = []
+        for scenario_id in SCENARIO_ORDER:
+            scenario = SCENARIOS.get(scenario_id)
+            if not scenario:
+                continue
+            scenarios.append(
+                {
+                    "id": scenario["id"],
+                    "title": scenario["title"],
+                    "description": scenario["description"],
+                    "difficulty": scenario["difficulty"],
+                    "total_locks": len(scenario["locks"]),
+                }
+            )
+        return jsonify({"scenarios": scenarios})
+
+    @app.post("/api/scenarios/<scenario_id>/start")
+    def start_scenario(scenario_id: str):
+        scenario = SCENARIOS.get(scenario_id)
+        if not scenario:
+            return jsonify({"error": "Scenario not found."}), 404
+
+        _init_state(scenario_id)
+        return jsonify(_build_state_payload(scenario_id, scenario))
+
+    @app.get("/api/scenarios/<scenario_id>/state")
+    def get_state(scenario_id: str):
+        scenario = SCENARIOS.get(scenario_id)
+        if not scenario:
+            return jsonify({"error": "Scenario not found."}), 404
+
+        if not _get_state(scenario_id):
+            _init_state(scenario_id)
+        return jsonify(_build_state_payload(scenario_id, scenario))
+
+    @app.post("/api/scenarios/<scenario_id>/unlock")
+    def unlock(scenario_id: str):
+        scenario = SCENARIOS.get(scenario_id)
+        if not scenario:
+            return jsonify({"error": "Scenario not found."}), 404
+
+        if not _get_state(scenario_id):
+            _init_state(scenario_id)
+
+        payload = request.get_json(silent=True) or {}
+        lock_id = str(payload.get("lock_id", "")).strip()
+        code = str(payload.get("code", "")).strip()
+
+        if not lock_id or not code:
+            return jsonify({"error": "Both lock_id and code are required."}), 400
+
+        state = _get_state(scenario_id)
+        assert state is not None
+
+        lock = _find_lock(scenario, lock_id)
+        if not lock:
+            return jsonify({"error": "Lock not found."}), 404
+
+        if lock_id in state["unlocked"]:
+            return jsonify(
+                {
+                    "message": "This lock is already unlocked.",
+                    "state": _build_state_payload(scenario_id, scenario),
+                }
+            )
+
+        next_lock = _next_lock_to_unlock(scenario, state)
+        if not next_lock or next_lock["id"] != lock_id:
+            return jsonify(
+                {
+                    "error": "Locks must be solved in order.",
+                    "state": _build_state_payload(scenario_id, scenario),
+                }
+            ), 400
+
+        attempts = state["attempts"]
+        attempts[lock_id] = attempts.get(lock_id, 0) + 1
+
+        if code.upper() == lock["code"].upper():
+            unlocked_at = _now_iso()
+            state["unlocked"][lock_id] = {
+                "code": code,
+                "unlocked_at": unlocked_at,
+            }
+            state["unlocked_history"].append(
+                {
+                    "lock_id": lock_id,
+                    "lock_name": lock["name"],
+                    "code": code,
+                    "unlocked_at": unlocked_at,
+                    "message": lock["unlock_message"],
+                }
+            )
+            _add_clue(
+                state,
+                clue_id=f"lock:{lock_id}",
+                text=lock["clue"],
+                source=f"Unlocked {lock['name']}",
+            )
+
+            if len(state["unlocked"]) == len(scenario["locks"]):
+                state["completed"] = True
+                state["completed_at"] = _now_iso()
+
+            _save_state(scenario_id, state)
+            return jsonify(
+                {
+                    "success": True,
+                    "message": lock["unlock_message"],
+                    "state": _build_state_payload(scenario_id, scenario),
+                }
+            )
+
+        if attempts[lock_id] >= lock.get("hint_after_failures", 999):
+            _add_clue(
+                state,
+                clue_id=f"hint:{lock_id}",
+                text=lock["hint_text"],
+                source=f"Hint for {lock['name']}",
+            )
+
+        _save_state(scenario_id, state)
+        return jsonify(
+            {
+                "success": False,
+                "message": "Incorrect code. Try again.",
+                "state": _build_state_payload(scenario_id, scenario),
+            }
+        )
+
+    @app.get("/api/scenarios/<scenario_id>/leaderboard")
+    def get_leaderboard(scenario_id: str):
+        if scenario_id not in SCENARIOS:
+            return jsonify({"error": "Scenario not found."}), 404
+        ranked = sorted(LEADERBOARD[scenario_id], key=lambda e: e["score"], reverse=True)
+        for i, entry in enumerate(ranked, 1):
+            entry["rank"] = i
+        return jsonify({"leaderboard": ranked})
+
+    @app.post("/api/scenarios/<scenario_id>/leaderboard")
+    def submit_leaderboard(scenario_id: str):
+        scenario = SCENARIOS.get(scenario_id)
+        if not scenario:
+            return jsonify({"error": "Scenario not found."}), 404
+        state = _get_state(scenario_id)
+        if not state or not state.get("completed"):
+            return jsonify({"error": "Scenario must be completed first."}), 400
+        body = request.get_json(silent=True) or {}
+        name = str(body.get("name", "")).strip()[:30]
+        if not name:
+            return jsonify({"error": "Name is required."}), 400
+        score_data = _calc_score(state, scenario)
+        if not score_data:
+            return jsonify({"error": "Score not available."}), 400
+        LEADERBOARD[scenario_id].append({
+            "name": name,
+            "score": score_data["final_score"],
+            "elapsed_seconds": score_data["elapsed_seconds"],
+            "completed_at": state.get("completed_at", _now_iso()),
+            "rank": 0,
+        })
+        ranked = sorted(LEADERBOARD[scenario_id], key=lambda e: e["score"], reverse=True)
+        for i, entry in enumerate(ranked, 1):
+            entry["rank"] = i
+        return jsonify({"leaderboard": ranked, "your_score": score_data})
+
+    return app
+
+
+def _state_key(scenario_id: str) -> str:
+    return f"escapejs:{scenario_id}"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _init_state(scenario_id: str) -> None:
+    session[_state_key(scenario_id)] = {
+        "started_at": _now_iso(),
+        "completed": False,
+        "attempts": {},
+        "unlocked": {},
+        "unlocked_history": [],
+        "clues": [],
+    }
+    session.modified = True
+
+
+def _get_state(scenario_id: str) -> dict[str, Any] | None:
+    return session.get(_state_key(scenario_id))
+
+
+def _save_state(scenario_id: str, state: dict[str, Any]) -> None:
+    session[_state_key(scenario_id)] = state
+    session.modified = True
+
+
+def _find_lock(scenario: dict[str, Any], lock_id: str) -> dict[str, Any] | None:
+    return next((lock for lock in scenario["locks"] if lock["id"] == lock_id), None)
+
+
+def _next_lock_to_unlock(scenario: dict[str, Any], state: dict[str, Any]) -> dict[str, Any] | None:
+    for lock in scenario["locks"]:
+        if lock["id"] not in state["unlocked"]:
+            return lock
+    return None
+
+
+def _add_clue(state: dict[str, Any], clue_id: str, text: str, source: str) -> None:
+    if any(existing["id"] == clue_id for existing in state["clues"]):
+        return
+    state["clues"].append(
+        {
+            "id": clue_id,
+            "text": text,
+            "source": source,
+            "revealed_at": _now_iso(),
+        }
+    )
+
+
+def _calc_score(state: dict[str, Any], scenario: dict[str, Any]) -> dict[str, Any] | None:
+    if not state.get("completed"):
+        return None
+    total_locks = len(scenario["locks"])
+    total_attempts = sum(state["attempts"].values())
+    failed_attempts = max(0, total_attempts - total_locks)
+    hints_used = sum(1 for c in state["clues"] if c["id"].startswith("hint:"))
+    started = datetime.fromisoformat(state["started_at"])
+    completed = datetime.fromisoformat(state.get("completed_at", _now_iso()))
+    elapsed = int((completed - started).total_seconds())
+    time_limit = scenario.get("time_limit_seconds", 1800)
+    time_remaining = max(0, time_limit - elapsed)
+    base = scenario.get("base_score", 10000)
+    attempts_penalty = failed_attempts * 200
+    hints_penalty = hints_used * 300
+    time_bonus = time_remaining * 2
+    final_score = max(0, base - attempts_penalty - hints_penalty + time_bonus)
+    return {
+        "base_score": base,
+        "failed_attempts": failed_attempts,
+        "attempts_penalty": attempts_penalty,
+        "hints_used": hints_used,
+        "hints_penalty": hints_penalty,
+        "time_bonus": time_bonus,
+        "elapsed_seconds": elapsed,
+        "final_score": final_score,
+    }
+
+
+def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str, Any]:
+    state = _get_state(scenario_id)
+    if state is None:
+        raise ValueError("Scenario state must be initialized before building payload")
+
+    total_locks = len(scenario["locks"])
+    unlocked_count = len(state["unlocked"])
+    progress_pct = round((unlocked_count / total_locks) * 100, 1) if total_locks else 0.0
+
+    locks_payload = []
+    for lock in scenario["locks"]:
+        lock_id = lock["id"]
+        unlocked_data = state["unlocked"].get(lock_id)
+        locks_payload.append(
+            {
+                "id": lock_id,
+                "name": lock["name"],
+                "prompt": lock["prompt"],
+                "input_length": lock["input_length"],
+                "status": "unlocked" if unlocked_data else "locked",
+                "attempts": state["attempts"].get(lock_id, 0),
+                "successful_code": unlocked_data["code"] if unlocked_data else None,
+                "unlocked_at": unlocked_data["unlocked_at"] if unlocked_data else None,
+                "image_url": lock.get("image_url"),
+                "sounds": lock.get("sounds"),
+            }
+        )
+
+    next_lock = _next_lock_to_unlock(scenario, state)
+    score = _calc_score(state, scenario) if state["completed"] else None
+
+    return {
+        "scenario": {
+            "id": scenario["id"],
+            "title": scenario["title"],
+            "description": scenario["description"],
+            "difficulty": scenario["difficulty"],
+            "total_locks": total_locks,
+            "time_limit_seconds": scenario.get("time_limit_seconds", 1800),
+        },
+        "state": {
+            "started_at": state["started_at"],
+            "completed": state["completed"],
+            "unlocked_count": unlocked_count,
+            "progress_pct": progress_pct,
+            "next_lock_id": next_lock["id"] if next_lock else None,
+            "locks": locks_payload,
+            "clues": state["clues"],
+            "unlocked_history": state["unlocked_history"],
+            "score": score,
+        },
+    }
+
+
+app = create_app()
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
