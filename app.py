@@ -8,6 +8,182 @@ from collections import defaultdict
 from flask import Flask, jsonify, render_template, request, session
 
 SCENARIOS: dict[str, dict[str, Any]] = {
+    "wwjd": {
+        "id": "wwjd",
+        "title": "WWJD - Why Would Jesse Depart?",
+        "description": "Jesse is missing. Nobody misses him, but you paid good money for this escape room, so I guess you can try to find him. Good luck!",
+        "difficulty": "Hard",
+        "time_limit_seconds": 3600,
+        "base_score": 15000,
+        "shared_state": True,
+        "unlock_groups": [
+            {
+                "id": "kitchen",
+                "name": "Kitchen",
+                "lock_ids": ["riddle-me-this", "stoppers", "drink-up"],
+                "completion_clue": "The kitchen set is complete. Go find a box in the TV stand drawer.",
+            },
+            {
+                "id": "detective",
+                "name": "Detective",
+                "lock_ids": ["alpha-omega", "fashion", "heard-that", "that-tracks"],
+                "completion_clue": "Detective work complete. Go to the office; it is now unlocked.",
+            },
+            {
+                "id": "office",
+                "name": "Office",
+                "lock_ids": ["cubers"],
+            },
+            {
+                "id": "spells-1",
+                "name": "Spells",
+                "lock_ids": ["s1"],
+            },
+            {
+                "id": "spells-2",
+                "name": "Spells",
+                "lock_ids": ["s2"],
+            },
+            {
+                "id": "spells-3",
+                "name": "Spells",
+                "lock_ids": ["s3"],
+            },
+            {
+                "id": "spells-4",
+                "name": "Spells",
+                "lock_ids": ["s4"],
+            },
+            {
+                "id": "finale",
+                "name": "Finale",
+                "lock_ids": ["strike"],
+            },
+        ],
+        "locks": [
+            {
+                "id": "riddle-me-this",
+                "name": "Riddle Me This",
+                "prompt": "Enter the 4-digit code.",
+                "code": "2023",
+                "input_length": 4,
+                "clue": "Kitchen puzzle solved.",
+                "unlock_message": "Nice solve.",
+            },
+            {
+                "id": "stoppers",
+                "name": "Stoppers",
+                "prompt": "Enter the 4-letter code.",
+                "code": "WINE",
+                "input_length": 4,
+                "clue": "Kitchen puzzle solved.",
+                "unlock_message": "Nice solve.",
+            },
+            {
+                "id": "drink-up",
+                "name": "Drink Up!",
+                "prompt": "Enter the 4-digit code.",
+                "code": "1324",
+                "input_length": 4,
+                "clue": "Kitchen puzzle solved.",
+                "unlock_message": "Nice solve.",
+            },
+            {
+                "id": "alpha-omega",
+                "name": "Alpha Omega",
+                "prompt": "Enter the code.",
+                "code": "scrubs",
+                "input_length": 6,
+                "clue": "Detective puzzle solved.",
+                "unlock_message": "Clue connected.",
+            },
+            {
+                "id": "fashion",
+                "name": "Fashion",
+                "prompt": "Enter the 4-letter code.",
+                "code": "SPIN",
+                "input_length": 4,
+                "clue": "Detective puzzle solved.",
+                "unlock_message": "Clue connected.",
+            },
+            {
+                "id": "heard-that",
+                "name": "Heard That",
+                "prompt": "Enter the 4-letter code.",
+                "code": "POOR",
+                "input_length": 4,
+                "clue": "Detective puzzle solved.",
+                "unlock_message": "Clue connected.",
+            },
+            {
+                "id": "that-tracks",
+                "name": "That Tracks",
+                "prompt": "Enter the 5-letter code.",
+                "code": "STARS",
+                "input_length": 5,
+                "clue": "Detective puzzle solved.",
+                "unlock_message": "Clue connected.",
+            },
+            {
+                "id": "cubers",
+                "name": "Cubers",
+                "prompt": "Enter the 4-letter code.",
+                "code": "TUBE",
+                "input_length": 4,
+                "clue": "Great cubing, now check the scanner...",
+                "unlock_message": "Great cubing, now check the scanner...",
+            },
+            {
+                "id": "s1",
+                "name": "S1",
+                "prompt": "Too large to fit through the keyhole? Great things sometimes must become small.",
+                "input_type": "spell",
+                "spell": "reducio",
+                "clue": "Too large to fit through the keyhole? Great things sometimes must become small.",
+                "image_url": "/static/images/SpellMovements.png",
+                "unlock_message": "Spell accepted.",
+            },
+            {
+                "id": "s2",
+                "name": "S2",
+                "prompt": "A charging foe need not be defeated. Simply stop it in its tracks.",
+                "input_type": "spell",
+                "spell": "stupefy",
+                "clue": "A charging foe need not be defeated. Simply stop it in its tracks.",
+                "image_url": "/static/images/SpellMovements.png",
+                "unlock_message": "Spell accepted.",
+            },
+            {
+                "id": "s3",
+                "name": "S3",
+                "prompt": "Strength remains, magic remains, but one thing must leave its master's hand.",
+                "input_type": "spell",
+                "spell": "expelliarmus",
+                "clue": "Strength remains, magic remains, but one thing must leave its master's hand.",
+                "image_url": "/static/images/SpellMovements.png",
+                "unlock_message": "Spell accepted.",
+            },
+            {
+                "id": "s4",
+                "name": "S4",
+                "prompt": "It is so far, but you need it near. Cast the spell to make it appear.",
+                "input_type": "spell",
+                "spell": "accio",
+                "clue": "It is so far, but you need it near. Cast the spell to make it appear.",
+                "image_url": "/static/images/SpellMovements.png",
+                "unlock_message": "Spell accepted.",
+            },
+            {
+                "id": "strike",
+                "name": "Strike",
+                "prompt": "Jesse never liked to dance. He would just stand awkwardly in front of a window striking what I like to call an 'x' pose.",
+                "input_type": "pose",
+                "pose_name": "x pose",
+                "clue": "Jesse never liked to dance. He would just stand awkwardly in front of a window striking what I like to call an 'x' pose.",
+                "unlock_message": "Wow, you are quite the dancer!",
+            },
+        ],
+    },
     "midnight-lab": {
         "id": "midnight-lab",
         "title": "Midnight Lab",
@@ -197,9 +373,10 @@ SCENARIOS: dict[str, dict[str, Any]] = {
     },
 }
 
-SCENARIO_ORDER = ["bunny-hoppers", "midnight-lab", "clocktower-heist"]
+SCENARIO_ORDER = ["wwjd", "bunny-hoppers", "midnight-lab", "clocktower-heist"]
 
 LEADERBOARD: dict[str, list] = defaultdict(list)
+ROOM_STATES: dict[str, dict[str, Any]] = {}
 
 
 def create_app() -> Flask:
@@ -246,6 +423,7 @@ def create_app() -> Flask:
                 "payload": body["payload"],
             },
         )
+        _process_motion_event(body)
         return ("", 204)
 
     @app.post("/api/scenarios/<scenario_id>/start")
@@ -307,34 +485,19 @@ def create_app() -> Flask:
                 }
             ), 400
 
+        if _lock_input_type(lock) != "code":
+            return jsonify(
+                {
+                    "error": "This lock is cannot be unlocked with a code.",
+                    "state": _build_state_payload(scenario_id, scenario),
+                }
+            ), 400
+
         attempts = state["attempts"]
         attempts[lock_id] = attempts.get(lock_id, 0) + 1
 
         if code.upper() == lock["code"].upper():
-            unlocked_at = _now_iso()
-            state["unlocked"][lock_id] = {
-                "code": code,
-                "unlocked_at": unlocked_at,
-            }
-            state["unlocked_history"].append(
-                {
-                    "lock_id": lock_id,
-                    "lock_name": lock["name"],
-                    "code": code,
-                    "unlocked_at": unlocked_at,
-                    "message": lock["unlock_message"],
-                }
-            )
-            _add_clue(
-                state,
-                clue_id=f"lock:{lock_id}",
-                text=lock["clue"],
-                source=f"Unlocked {lock['name']}",
-            )
-
-            if len(state["unlocked"]) == len(scenario["locks"]):
-                state["completed"] = True
-                state["completed_at"] = _now_iso()
+            _unlock_lock(scenario, state, lock, code)
 
             _save_state(scenario_id, state)
             return jsonify(
@@ -444,7 +607,7 @@ def _validate_motion_event(body: dict[str, Any]) -> str | None:
 
 
 def _init_state(scenario_id: str) -> None:
-    session[_state_key(scenario_id)] = {
+    state = {
         "started_at": _now_iso(),
         "completed": False,
         "attempts": {},
@@ -452,16 +615,30 @@ def _init_state(scenario_id: str) -> None:
         "unlocked_history": [],
         "clues": [],
     }
-    session.modified = True
+    if _scenario_uses_shared_state(scenario_id):
+        ROOM_STATES[scenario_id] = state
+    else:
+        session[_state_key(scenario_id)] = state
+        session.modified = True
 
 
 def _get_state(scenario_id: str) -> dict[str, Any] | None:
+    if _scenario_uses_shared_state(scenario_id):
+        return ROOM_STATES.get(scenario_id)
     return session.get(_state_key(scenario_id))
 
 
 def _save_state(scenario_id: str, state: dict[str, Any]) -> None:
-    session[_state_key(scenario_id)] = state
-    session.modified = True
+    if _scenario_uses_shared_state(scenario_id):
+        ROOM_STATES[scenario_id] = state
+    else:
+        session[_state_key(scenario_id)] = state
+        session.modified = True
+
+
+def _scenario_uses_shared_state(scenario_id: str) -> bool:
+    scenario = SCENARIOS.get(scenario_id)
+    return bool(scenario and scenario.get("shared_state"))
 
 
 def _find_lock(scenario: dict[str, Any], lock_id: str) -> dict[str, Any] | None:
@@ -502,6 +679,7 @@ def _unlock_groups(scenario: dict[str, Any]) -> list[dict[str, Any]]:
                     "id": str(raw_group.get("id") or f"group-{group_index}"),
                     "name": str(raw_group.get("name") or f"Stage {group_index}"),
                     "lock_ids": group_lock_ids,
+                    "completion_clue": raw_group.get("completion_clue"),
                 }
             )
 
@@ -513,6 +691,7 @@ def _unlock_groups(scenario: dict[str, Any]) -> list[dict[str, Any]]:
                 "id": f"lock:{lock['id']}",
                 "name": lock["name"],
                 "lock_ids": [lock["id"]],
+                "completion_clue": None,
             }
         )
 
@@ -543,6 +722,139 @@ def _active_lock_ids(scenario: dict[str, Any], state: dict[str, Any]) -> list[st
     if not group:
         return []
     return [lock_id for lock_id in group["lock_ids"] if lock_id not in state["unlocked"]]
+
+
+def _lock_input_type(lock: dict[str, Any]) -> str:
+    input_type = str(lock.get("input_type", "code")).lower()
+    if input_type in {"code", "spell", "pose"}:
+        return input_type
+    return "code"
+
+
+def _normalize_motion_text(value: str) -> str:
+    return "".join(character for character in value.lower() if character.isalnum())
+
+
+def _motion_matches_lock(lock: dict[str, Any], body: dict[str, Any]) -> bool:
+    input_type = _lock_input_type(lock)
+    event_name = str(body.get("event_name", ""))
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        return False
+
+    if input_type == "spell":
+        expected = str(lock.get("spell", "")).strip()
+        actual = str(payload.get("spell_name", "")).strip()
+        return (
+            event_name == "spell_detected"
+            and bool(expected)
+            and bool(actual)
+            and _normalize_motion_text(expected) == _normalize_motion_text(actual)
+        )
+
+    if input_type == "pose":
+        expected = str(lock.get("pose_name", "")).strip()
+        actual = str(payload.get("pose_name", "")).strip()
+        aliases = lock.get("pose_aliases")
+        expected_values = [expected]
+        if isinstance(aliases, list):
+            expected_values.extend(alias for alias in aliases if isinstance(alias, str))
+        normalized_actual = _normalize_motion_text(actual)
+        return (
+            event_name == "pose_detected"
+            and bool(actual)
+            and any(
+                _normalize_motion_text(expected_value) == normalized_actual
+                for expected_value in expected_values
+                if expected_value
+            )
+        )
+
+    return False
+
+
+def _unlock_lock(scenario: dict[str, Any], state: dict[str, Any], lock: dict[str, Any], solved_with: str) -> None:
+    lock_id = lock["id"]
+    unlocked_at = _now_iso()
+    state["unlocked"][lock_id] = {
+        "code": solved_with,
+        "unlocked_at": unlocked_at,
+    }
+    state["unlocked_history"].append(
+        {
+            "lock_id": lock_id,
+            "lock_name": lock["name"],
+            "code": solved_with,
+            "unlocked_at": unlocked_at,
+            "message": lock["unlock_message"],
+        }
+    )
+    _add_clue(
+        state,
+        clue_id=f"lock:{lock_id}",
+        text=str(lock.get("clue") or f"Unlocked {lock['name']}"),
+        source=f"Unlocked {lock['name']}",
+    )
+    _add_group_completion_clues(scenario, state)
+
+    if len(state["unlocked"]) == len(scenario["locks"]):
+        state["completed"] = True
+        state["completed_at"] = _now_iso()
+
+
+def _add_group_completion_clues(scenario: dict[str, Any], state: dict[str, Any]) -> None:
+    for group in _unlock_groups(scenario):
+        completion_clue = group.get("completion_clue")
+        if not isinstance(completion_clue, str) or not completion_clue.strip():
+            continue
+        if not _group_is_complete(group, state):
+            continue
+        _add_clue(
+            state,
+            clue_id=f"group:{group['id']}:complete",
+            text=completion_clue,
+            source=f"{group['name']} Complete",
+        )
+
+
+def _process_motion_event(body: dict[str, Any]) -> None:
+    scenario_id_hint = body.get("scenario_id")
+    candidate_ids: list[str]
+    if isinstance(scenario_id_hint, str) and scenario_id_hint in SCENARIOS:
+        candidate_ids = [scenario_id_hint]
+    else:
+        candidate_ids = [
+            scenario_id
+            for scenario_id, scenario in SCENARIOS.items()
+            if scenario.get("shared_state")
+        ]
+
+    for scenario_id in candidate_ids:
+        scenario = SCENARIOS.get(scenario_id)
+        if not scenario:
+            continue
+        state = _get_state(scenario_id)
+        if not state or state.get("completed"):
+            continue
+
+        for active_lock_id in _active_lock_ids(scenario, state):
+            lock = _find_lock(scenario, active_lock_id)
+            if not lock:
+                continue
+            if not _motion_matches_lock(lock, body):
+                continue
+
+            payload = body.get("payload")
+            solved_with = "MOTION"
+            if isinstance(payload, dict):
+                if body.get("event_name") == "spell_detected":
+                    solved_with = str(payload.get("spell_name") or solved_with)
+                elif body.get("event_name") == "pose_detected":
+                    solved_with = str(payload.get("pose_name") or solved_with)
+
+            _unlock_lock(scenario, state, lock, solved_with)
+            _save_state(scenario_id, state)
+            return
 
 
 def _add_clue(state: dict[str, Any], clue_id: str, text: str, source: str) -> None:
@@ -607,12 +919,15 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
         unlocked_data = state["unlocked"].get(lock_id)
         group_index = lock_group_indexes.get(lock_id)
         group = unlock_groups[group_index] if group_index is not None else None
+        input_type = _lock_input_type(lock)
+        expected_code = str(lock.get("code", ""))
         locks_payload.append(
             {
                 "id": lock_id,
                 "name": lock["name"],
                 "prompt": lock["prompt"],
-                "input_length": lock["input_length"],
+                "input_type": input_type,
+                "input_length": lock.get("input_length") if input_type == "code" else None,
                 "status": "unlocked" if unlocked_data else "locked",
                 "attempts": state["attempts"].get(lock_id, 0),
                 "successful_code": unlocked_data["code"] if unlocked_data else None,

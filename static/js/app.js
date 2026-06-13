@@ -3,6 +3,7 @@ const state = {
   activeScenarioId: null,
   activePayload: null,
   timer: { interval: null, limitSeconds: 0, startedAt: null, expired: false },
+  refreshInterval: null,
 };
 
 const scenarioListEl = document.getElementById("scenario-list");
@@ -85,6 +86,7 @@ function renderScenarioList() {
 
 async function startScenario(scenarioId) {
   stopTimer();
+  stopAutoRefresh();
   scorePanelEl.classList.add("hidden");
   try {
     const response = await fetch(`/api/scenarios/${scenarioId}/start`, {
@@ -101,6 +103,7 @@ async function startScenario(scenarioId) {
     state.activePayload = payload;
     scenariosSectionEl.classList.add("hidden");
     homeBtnEl.classList.remove("hidden");
+    startAutoRefresh();
     renderGame();
     showToast(`Scenario started: ${payload.scenario.title}`, "ok");
   } catch (err) {
@@ -110,6 +113,7 @@ async function startScenario(scenarioId) {
 
 function goHome() {
   stopTimer();
+  stopAutoRefresh();
   state.activeScenarioId = null;
   state.activePayload = null;
   state.timer.expired = false;
@@ -207,6 +211,16 @@ function renderLocks(progressState) {
     }
 
     if (isCurrent && lock.status === "locked") {
+      if (lock.input_type === "spell" || lock.input_type === "pose") {
+        const helper = `Waiting for ${lock.input_type} event from external md`;
+        const motionHint = document.createElement("p");
+        motionHint.className = "meta";
+        motionHint.textContent = helper;
+        card.appendChild(motionHint);
+        locksListEl.appendChild(card);
+        return;
+      }
+
       const isExpired = state.timer.expired;
       const placeholder = isExpired ? "Time expired" : `Enter ${lock.input_length}-digit code`;
       const disabledAttr = isExpired ? "disabled" : "";
@@ -258,6 +272,41 @@ function renderLocks(progressState) {
 
     locksListEl.appendChild(card);
   });
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  if (!state.activeScenarioId) {
+    return;
+  }
+  state.refreshInterval = window.setInterval(() => {
+    refreshScenarioState();
+  }, 1500);
+}
+
+function stopAutoRefresh() {
+  if (state.refreshInterval) {
+    clearInterval(state.refreshInterval);
+    state.refreshInterval = null;
+  }
+}
+
+async function refreshScenarioState() {
+  if (!state.activeScenarioId) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/scenarios/${state.activeScenarioId}/state`);
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    state.activePayload = payload;
+    renderGame();
+  } catch (_err) {
+    // Ignore polling errors; user-triggered actions surface errors explicitly.
+  }
 }
 
 function renderClues(clues) {
