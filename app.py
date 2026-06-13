@@ -102,6 +102,18 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "difficulty": "Easy",
         "time_limit_seconds": 2700,
         "base_score": 7000,
+        "unlock_groups": [
+            {
+                "id": "egg-hunt",
+                "name": "Egg Hunt",
+                "lock_ids": ["egg-1", "egg-2", "egg-3", "egg-4", "egg-5", "egg-6", "egg-7"],
+            },
+            {
+                "id": "basket-return",
+                "name": "Return the Basket",
+                "lock_ids": ["FINAL"],
+            },
+        ],
         "locks": [
             {
                 "id": "egg-1",
@@ -228,6 +240,26 @@ def create_app() -> Flask:
             )
         return jsonify({"scenarios": scenarios})
 
+    @app.post("/motion-events")
+    def motion_events():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object body is required."}), 400
+
+        validation_error = _validate_motion_event(body)
+        if validation_error:
+            return jsonify({"error": validation_error}), 400
+
+        app.logger.info(
+            "Motion event received",
+            extra={
+                "event_name": body["event_name"],
+                "timestamp_ms": body["timestamp_ms"],
+                "payload": body["payload"],
+            },
+        )
+        return ("", 204)
+
     @app.post("/api/scenarios/<scenario_id>/start")
     def start_scenario(scenario_id: str):
         scenario = SCENARIOS.get(scenario_id)
@@ -278,11 +310,11 @@ def create_app() -> Flask:
                 }
             )
 
-        next_lock = _next_lock_to_unlock(scenario, state)
-        if not next_lock or next_lock["id"] != lock_id:
+        active_lock_ids = set(_active_lock_ids(scenario, state))
+        if lock_id not in active_lock_ids:
             return jsonify(
                 {
-                    "error": "Locks must be solved in order.",
+                    "error": "This lock is not available yet. Complete all locks in the current stage first.",
                     "state": _build_state_payload(scenario_id, scenario),
                 }
             ), 400
@@ -389,6 +421,40 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _validate_motion_event(body: dict[str, Any]) -> str | None:
+    event_name = body.get("event_name")
+    timestamp_ms = body.get("timestamp_ms")
+    payload = body.get("payload")
+
+    if not isinstance(event_name, str) or not event_name.strip():
+        return "event_name must be a non-empty string."
+    if not isinstance(timestamp_ms, int):
+        return "timestamp_ms must be an integer."
+    if not isinstance(payload, dict):
+        return "payload must be an object."
+
+    if event_name == "spell_detected":
+        if not isinstance(payload.get("spell_name"), str) or not payload["spell_name"].strip():
+            return "spell_detected payload must include a non-empty spell_name string."
+        if not isinstance(payload.get("tracking_id"), str) or not payload["tracking_id"].strip():
+            return "spell_detected payload must include a non-empty tracking_id string."
+        return None
+
+    if event_name == "pose_detected":
+        if not isinstance(payload.get("pose_name"), str) or not payload["pose_name"].strip():
+            return "pose_detected payload must include a non-empty pose_name string."
+        tracking_ids = payload.get("tracking_ids")
+        if not isinstance(tracking_ids, list) or not tracking_ids:
+            return "pose_detected payload must include a non-empty tracking_ids array."
+        if not all(isinstance(tracking_id, str) and tracking_id.strip() for tracking_id in tracking_ids):
+            return "pose_detected payload tracking_ids must only contain non-empty strings."
+        if not isinstance(payload.get("held_ms"), int):
+            return "pose_detected payload must include an integer held_ms."
+        return None
+
+    return "Unsupported event_name."
+
+
 def _init_state(scenario_id: str) -> None:
     session[_state_key(scenario_id)] = {
         "started_at": _now_iso(),
@@ -414,11 +480,81 @@ def _find_lock(scenario: dict[str, Any], lock_id: str) -> dict[str, Any] | None:
     return next((lock for lock in scenario["locks"] if lock["id"] == lock_id), None)
 
 
-def _next_lock_to_unlock(scenario: dict[str, Any], state: dict[str, Any]) -> dict[str, Any] | None:
-    for lock in scenario["locks"]:
-        if lock["id"] not in state["unlocked"]:
-            return lock
+def _unlock_groups(scenario: dict[str, Any]) -> list[dict[str, Any]]:
+    locks = scenario["locks"]
+    lock_lookup = {lock["id"]: lock for lock in locks}
+    raw_groups = scenario.get("unlock_groups")
+    groups: list[dict[str, Any]] = []
+    seen_lock_ids: set[str] = set()
+
+    if isinstance(raw_groups, list):
+        for raw_group in raw_groups:
+            if not isinstance(raw_group, dict):
+                continue
+
+            raw_lock_ids = raw_group.get("lock_ids")
+            if not isinstance(raw_lock_ids, list):
+                continue
+
+            group_lock_ids = []
+            for lock_id in raw_lock_ids:
+                if not isinstance(lock_id, str):
+                    continue
+                if lock_id not in lock_lookup or lock_id in seen_lock_ids:
+                    continue
+                group_lock_ids.append(lock_id)
+                seen_lock_ids.add(lock_id)
+
+            if not group_lock_ids:
+                continue
+
+            group_index = len(groups) + 1
+            groups.append(
+                {
+                    "id": str(raw_group.get("id") or f"group-{group_index}"),
+                    "name": str(raw_group.get("name") or f"Stage {group_index}"),
+                    "lock_ids": group_lock_ids,
+                }
+            )
+
+    for lock in locks:
+        if lock["id"] in seen_lock_ids:
+            continue
+        groups.append(
+            {
+                "id": f"lock:{lock['id']}",
+                "name": lock["name"],
+                "lock_ids": [lock["id"]],
+            }
+        )
+
+    return groups
+
+
+def _lock_group_index_map(scenario: dict[str, Any]) -> dict[str, int]:
+    group_indexes: dict[str, int] = {}
+    for index, group in enumerate(_unlock_groups(scenario)):
+        for lock_id in group["lock_ids"]:
+            group_indexes[lock_id] = index
+    return group_indexes
+
+
+def _group_is_complete(group: dict[str, Any], state: dict[str, Any]) -> bool:
+    return all(lock_id in state["unlocked"] for lock_id in group["lock_ids"])
+
+
+def _active_unlock_group(scenario: dict[str, Any], state: dict[str, Any]) -> dict[str, Any] | None:
+    for group in _unlock_groups(scenario):
+        if not _group_is_complete(group, state):
+            return group
     return None
+
+
+def _active_lock_ids(scenario: dict[str, Any], state: dict[str, Any]) -> list[str]:
+    group = _active_unlock_group(scenario, state)
+    if not group:
+        return []
+    return [lock_id for lock_id in group["lock_ids"] if lock_id not in state["unlocked"]]
 
 
 def _add_clue(state: dict[str, Any], clue_id: str, text: str, source: str) -> None:
@@ -471,11 +607,18 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
     total_locks = len(scenario["locks"])
     unlocked_count = len(state["unlocked"])
     progress_pct = round((unlocked_count / total_locks) * 100, 1) if total_locks else 0.0
+    unlock_groups = _unlock_groups(scenario)
+    lock_group_indexes = _lock_group_index_map(scenario)
+    active_group = _active_unlock_group(scenario, state)
+    active_lock_ids = _active_lock_ids(scenario, state)
+    active_lock_id_set = set(active_lock_ids)
 
     locks_payload = []
     for lock in scenario["locks"]:
         lock_id = lock["id"]
         unlocked_data = state["unlocked"].get(lock_id)
+        group_index = lock_group_indexes.get(lock_id)
+        group = unlock_groups[group_index] if group_index is not None else None
         locks_payload.append(
             {
                 "id": lock_id,
@@ -488,10 +631,12 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
                 "unlocked_at": unlocked_data["unlocked_at"] if unlocked_data else None,
                 "image_url": lock.get("image_url"),
                 "sounds": lock.get("sounds"),
+                "group_id": group["id"] if group else None,
+                "group_name": group["name"] if group else None,
+                "is_available": bool(unlocked_data) or lock_id in active_lock_id_set,
             }
         )
 
-    next_lock = _next_lock_to_unlock(scenario, state)
     score = _calc_score(state, scenario) if state["completed"] else None
 
     return {
@@ -508,7 +653,23 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
             "completed": state["completed"],
             "unlocked_count": unlocked_count,
             "progress_pct": progress_pct,
-            "next_lock_id": next_lock["id"] if next_lock else None,
+            "next_lock_id": active_lock_ids[0] if active_lock_ids else None,
+            "active_lock_ids": active_lock_ids,
+            "active_group": {
+                "id": active_group["id"],
+                "name": active_group["name"],
+                "lock_ids": active_group["lock_ids"],
+            } if active_group else None,
+            "unlock_groups": [
+                {
+                    "id": group["id"],
+                    "name": group["name"],
+                    "lock_ids": group["lock_ids"],
+                    "completed": _group_is_complete(group, state),
+                    "is_active": active_group is not None and group["id"] == active_group["id"],
+                }
+                for group in unlock_groups
+            ],
             "locks": locks_payload,
             "clues": state["clues"],
             "unlocked_history": state["unlocked_history"],

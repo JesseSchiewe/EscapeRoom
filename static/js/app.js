@@ -157,23 +157,24 @@ function renderGame() {
 function renderLocks(progressState) {
   locksListEl.innerHTML = "";
 
-  const nextLockIndex = progressState.locks.findIndex(
-    (l) => l.id === progressState.next_lock_id
-  );
+  const activeLockIds = new Set(progressState.active_lock_ids || []);
 
-  progressState.locks.forEach((lock, index) => {
-    // Hide locks that haven't been reached yet
-    if (lock.status === "locked" && nextLockIndex !== -1 && index > nextLockIndex) {
+  progressState.locks.forEach((lock) => {
+    if (lock.status === "locked" && !activeLockIds.has(lock.id)) {
       return;
     }
 
     const card = document.createElement("article");
-    const isCurrent = lock.id === progressState.next_lock_id;
+    const isCurrent = activeLockIds.has(lock.id);
 
     card.className = `lock-card ${lock.status} ${isCurrent ? "current" : ""}`.trim();
 
     const codeInfo = lock.successful_code
       ? `<p class="meta">Unlocked with code ${escapeHtml(lock.successful_code)}</p>`
+      : "";
+
+    const groupInfo = lock.group_name
+      ? `<p class="meta">Stage: ${escapeHtml(lock.group_name)}</p>`
       : "";
 
     const unlockTime = lock.unlocked_at
@@ -189,6 +190,7 @@ function renderLocks(progressState) {
       <p>${escapeHtml(lock.prompt)}</p>
       ${imageHtml}
       <span class="status-pill ${lock.status}">${lock.status.toUpperCase()}</span>
+      ${groupInfo}
       <p class="meta">Attempts: ${lock.attempts}</p>
       ${codeInfo}
       ${unlockTime}
