@@ -119,7 +119,7 @@ Example:
 ]
 ```
 
-In the built-in Bunny Hoppers scenario, all seven eggs are now available together, and the final basket step unlocks only after all seven eggs are complete.
+Scenarios without `unlock_groups` keep the original sequential progression automatically, so you can opt in only for new rooms that need grouped unlocking.
 
 ## Security Note
 

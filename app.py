@@ -102,18 +102,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "difficulty": "Easy",
         "time_limit_seconds": 2700,
         "base_score": 7000,
-        "unlock_groups": [
-            {
-                "id": "egg-hunt",
-                "name": "Egg Hunt",
-                "lock_ids": ["egg-1", "egg-2", "egg-3", "egg-4", "egg-5", "egg-6", "egg-7"],
-            },
-            {
-                "id": "basket-return",
-                "name": "Return the Basket",
-                "lock_ids": ["FINAL"],
-            },
-        ],
         "locks": [
             {
                 "id": "egg-1",
