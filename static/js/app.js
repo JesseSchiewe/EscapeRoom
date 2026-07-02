@@ -4,6 +4,7 @@ const state = {
   activePayload: null,
   timer: { interval: null, limitSeconds: 0, startedAt: null, expired: false },
   refreshInterval: null,
+  isTypingCode: false,
 };
 
 const scenarioListEl = document.getElementById("scenario-list");
@@ -244,6 +245,16 @@ function renderLocks(progressState) {
         const button = formRow.querySelector("button");
 
         if (input && button) {
+          input.addEventListener("focus", () => {
+            state.isTypingCode = true;
+          });
+
+          input.addEventListener("blur", () => {
+            state.isTypingCode = false;
+            // Pull fresh state after editing ends so motion updates are not delayed.
+            refreshScenarioState();
+          });
+
           const submit = async () => {
             const code = input.value.trim();
             if (!code) {
@@ -256,6 +267,7 @@ function renderLocks(progressState) {
               return;
             }
 
+            state.isTypingCode = false;
             await submitUnlock(lock.id, code);
           };
 
@@ -293,6 +305,10 @@ function stopAutoRefresh() {
 
 async function refreshScenarioState() {
   if (!state.activeScenarioId) {
+    return;
+  }
+
+  if (state.isTypingCode) {
     return;
   }
 

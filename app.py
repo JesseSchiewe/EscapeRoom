@@ -73,15 +73,15 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {
                 "id": "stoppers",
                 "name": "Stoppers",
-                "prompt": "Enter the 4-letter code.",
-                "code": "WINE",
-                "input_length": 4,
+                "prompt": "Enter the 5-letter code.",
+                "code": "WINES",
+                "input_length": 5,
                 "clue": "Kitchen puzzle solved.",
                 "unlock_message": "Nice solve.",
             },
             {
                 "id": "drink-up",
-                "name": "Drink Up!",
+                "name": "Who is drinking what?",
                 "prompt": "Enter the 4-digit code.",
                 "code": "1324",
                 "input_length": 4,
@@ -100,11 +100,11 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {
                 "id": "fashion",
                 "name": "Fashion",
-                "prompt": "Enter the 4-letter code.",
+                "prompt": "Jesse has absolutely no fashion sense. He always wears the same color. If you threw away all of his other colors, he probably wouldn't even notice!",
                 "code": "SPIN",
                 "input_length": 4,
                 "clue": "Detective puzzle solved.",
-                "unlock_message": "Clue connected.",
+                "unlock_message": "I think he had trackers on his important items. See if you can track him with some weird app that he used to use.",
             },
             {
                 "id": "heard-that",
@@ -113,7 +113,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "code": "POOR",
                 "input_length": 4,
                 "clue": "Detective puzzle solved.",
-                "unlock_message": "Clue connected.",
+                "unlock_message": "There was a different tracking tool he used as well. I wonder what it was for.",
             },
             {
                 "id": "that-tracks",
