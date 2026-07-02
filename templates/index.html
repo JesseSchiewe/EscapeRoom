@@ -14,7 +14,7 @@
   </head>
   <body>
     <div class="noise" aria-hidden="true"></div>
-    <main class="layout">
+    <main class="layout" id="layout-root">
       <header class="hero panel">
         <div class="hero-top">
           <h1>EscapeJS</h1>
@@ -33,16 +33,22 @@
 
       <section id="game-area" class="game-grid hidden" aria-live="polite">
         <article class="panel status">
-          <h2 id="scenario-title">Scenario</h2>
-          <p id="scenario-description"></p>
-          <div class="progress-track" role="img" aria-label="Overall progress">
-            <div id="progress-fill" class="progress-fill"></div>
+          <div class="status-main">
+            <h2 id="scenario-title">Scenario</h2>
+            <p id="scenario-description"></p>
           </div>
-          <p id="progress-text" class="progress-text">0% complete</p>
-          <p id="completion-banner" class="completion hidden">Escape complete. You made it out.</p>
+
           <div id="timer-wrap" class="timer-wrap hidden">
             <span class="timer-label">Time Remaining</span>
             <div id="timer-display" class="timer-display">--:--</div>
+          </div>
+
+          <div class="status-progress">
+            <div class="progress-track" role="img" aria-label="Overall progress">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <p id="progress-text" class="progress-text">0% complete</p>
+            <p id="completion-banner" class="completion hidden">Escape complete. You made it out.</p>
           </div>
         </article>
 

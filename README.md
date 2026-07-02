@@ -38,21 +38,21 @@ EscapeJS is a Flask-powered escape room app where players can:
 1. Create and activate a virtual environment.
 2. Install dependencies:
 
-	 ```bash
-	 pip install -r requirements.txt
-	 ```
+	```bash
+	pip install -r requirements.txt
+	```
 
 3. Start the app:
 
-	 ```bash
-	 flask --app app run --debug
-	 ```
+	```bash
+	flask --app app run --debug --host=0.0.0.0 --port=5000
+	```
 
 4. Open your browser to:
 
-	 ```
-	 http://127.0.0.1:5000
-	 ```
+	```
+	http://127.0.0.1:5000
+	```
 
 ## Motion Webhook
 

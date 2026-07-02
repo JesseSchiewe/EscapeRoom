@@ -2,6 +2,8 @@ const state = {
   scenarios: [],
   activeScenarioId: null,
   activePayload: null,
+  lastUnlockedCount: null,
+  lastVisibleClueIds: [],
   timer: { interval: null, limitSeconds: 0, startedAt: null, expired: false },
   refreshInterval: null,
   isTypingCode: false,
@@ -33,6 +35,7 @@ const leaderboardBodyEl = document.getElementById("leaderboard-body");
 const leaderboardEmptyEl = document.getElementById("leaderboard-empty");
 const scenariosSectionEl = document.querySelector(".scenarios");
 const homeBtnEl = document.getElementById("home-btn");
+const layoutRootEl = document.getElementById("layout-root");
 
 homeBtnEl.addEventListener("click", goHome);
 
@@ -90,7 +93,7 @@ async function startScenario(scenarioId) {
   stopAutoRefresh();
   scorePanelEl.classList.add("hidden");
   try {
-    const response = await fetch(`/api/scenarios/${scenarioId}/start`, {
+    const response = await fetch(scenarioApiPath(scenarioId, "start"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -102,8 +105,11 @@ async function startScenario(scenarioId) {
 
     state.activeScenarioId = scenarioId;
     state.activePayload = payload;
+    state.lastUnlockedCount = payload?.state?.unlocked_count ?? 0;
+    state.lastVisibleClueIds = getClueIds(payload?.state?.clues);
     scenariosSectionEl.classList.add("hidden");
     homeBtnEl.classList.remove("hidden");
+    layoutRootEl?.classList.add("playing");
     startAutoRefresh();
     renderGame();
     showToast(`Scenario started: ${payload.scenario.title}`, "ok");
@@ -117,10 +123,13 @@ function goHome() {
   stopAutoRefresh();
   state.activeScenarioId = null;
   state.activePayload = null;
+  state.lastUnlockedCount = null;
+  state.lastVisibleClueIds = [];
   state.timer.expired = false;
   gameAreaEl.classList.add("hidden");
   scorePanelEl.classList.add("hidden");
   homeBtnEl.classList.add("hidden");
+  layoutRootEl?.classList.remove("playing");
   scenariosSectionEl.classList.remove("hidden");
 }
 
@@ -134,6 +143,7 @@ function renderGame() {
 
   const scenario = payload.scenario;
   const progress = payload.state;
+  const previousUnlockedCount = state.lastUnlockedCount;
 
   titleEl.textContent = scenario.title;
   descriptionEl.textContent = scenario.description;
@@ -157,6 +167,22 @@ function renderGame() {
   renderClues(progress.clues);
   renderHistory(progress.unlocked_history);
   gameAreaEl.classList.remove("hidden");
+
+  const currentClueIds = getClueIds(progress.clues);
+  const hasNewVisibleClue = currentClueIds.some((clueId) => !state.lastVisibleClueIds.includes(clueId));
+  if (hasNewVisibleClue) {
+    playClueUnlockedSound();
+  }
+  state.lastVisibleClueIds = currentClueIds;
+
+  if (
+    typeof previousUnlockedCount === "number"
+    && progress.unlocked_count > previousUnlockedCount
+  ) {
+    playUnlockSuccessSound();
+  }
+
+  state.lastUnlockedCount = progress.unlocked_count;
 }
 
 function renderLocks(progressState) {
@@ -186,19 +212,29 @@ function renderLocks(progressState) {
       ? `<span class="entry-time">Unlocked: ${formatTime(lock.unlocked_at)}</span>`
       : "";
 
+    const promptHtml = typeof lock.prompt === "string" && lock.prompt.trim().length > 0
+      ? `<p>${escapeHtml(lock.prompt)}</p>`
+      : "";
+
     const imageHtml = lock.image_url
       ? `<img src="${lock.image_url}" alt="Puzzle image for ${escapeHtml(lock.name)}" class="lock-image" />`
       : "";
 
     card.innerHTML = `
-      <h3>${escapeHtml(lock.name)}</h3>
-      <p>${escapeHtml(lock.prompt)}</p>
-      ${imageHtml}
-      <span class="status-pill ${lock.status}">${lock.status.toUpperCase()}</span>
-      ${groupInfo}
-      <p class="meta">Attempts: ${lock.attempts}</p>
-      ${codeInfo}
-      ${unlockTime}
+      <div class="lock-card-body">
+        <div class="lock-card-main">
+          <h3>${escapeHtml(lock.name)}</h3>
+          ${promptHtml}
+          ${imageHtml}
+          ${codeInfo}
+          ${unlockTime}
+        </div>
+        <aside class="lock-card-meta">
+          <span class="status-pill ${lock.status}">${lock.status.toUpperCase()}</span>
+          ${groupInfo}
+          <p class="meta">Attempts: ${lock.attempts}</p>
+        </aside>
+      </div>
     `;
 
     if (lock.sounds && Array.isArray(lock.sounds)) {
@@ -313,7 +349,7 @@ async function refreshScenarioState() {
   }
 
   try {
-    const response = await fetch(`/api/scenarios/${state.activeScenarioId}/state`);
+    const response = await fetch(scenarioApiPath(state.activeScenarioId, "state"));
     if (!response.ok) {
       return;
     }
@@ -352,12 +388,30 @@ function renderHistory(history) {
 
   history.forEach((entry) => {
     const item = document.createElement("li");
+    const hasMessage = typeof entry.message === "string" && entry.message.trim().length > 0;
+    const messageHtml = hasMessage ? `<p>${escapeHtml(entry.message)}</p>` : "";
     item.innerHTML = `
-      <strong>${escapeHtml(entry.lock_name)}</strong>
-      <p>Successful code: ${escapeHtml(entry.code)}</p>
-      <p>${escapeHtml(entry.message)}</p>
-      <span class="entry-time">Unlocked: ${formatTime(entry.unlocked_at)}</span>
+      <details class="history-item">
+        <summary>
+          <span class="history-lock-name">${escapeHtml(entry.lock_name)}</span>
+          <span class="history-expand-label">Expand</span>
+        </summary>
+        <div class="history-details">
+          <p>Successful code: ${escapeHtml(entry.code)}</p>
+          ${messageHtml}
+          <span class="entry-time">Unlocked: ${formatTime(entry.unlocked_at)}</span>
+        </div>
+      </details>
     `;
+
+    const detailsEl = item.querySelector("details.history-item");
+    const expandLabelEl = item.querySelector(".history-expand-label");
+    if (detailsEl && expandLabelEl) {
+      detailsEl.addEventListener("toggle", () => {
+        expandLabelEl.textContent = detailsEl.open ? "Collapse" : "Expand";
+      });
+    }
+
     historyListEl.appendChild(item);
   });
 }
@@ -368,7 +422,7 @@ async function submitUnlock(lockId, code) {
   }
 
   try {
-    const response = await fetch(`/api/scenarios/${state.activeScenarioId}/unlock`, {
+    const response = await fetch(scenarioApiPath(state.activeScenarioId, "unlock"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lock_id: lockId, code }),
@@ -383,7 +437,9 @@ async function submitUnlock(lockId, code) {
     renderGame();
 
     if (payload.success) {
-      showToast(payload.message || "Lock unlocked.", "ok");
+      if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+        showToast(payload.message, "ok");
+      }
     } else {
       showToast(payload.message || "Incorrect code.", "error");
     }
@@ -417,17 +473,27 @@ const NOTE_FREQ = {
 let _audioCtx = null;
 
 function getAudioCtx() {
-  if (!_audioCtx || _audioCtx.state === "closed") {
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    if (!_audioCtx || _audioCtx.state === "closed") {
+      _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (_audioCtx.state === "suspended") {
+      _audioCtx.resume().catch(() => {
+        // Some browsers block audio resume until an explicit user gesture.
+      });
+    }
+    return _audioCtx;
+  } catch (_err) {
+    return null;
   }
-  if (_audioCtx.state === "suspended") {
-    _audioCtx.resume();
-  }
-  return _audioCtx;
 }
 
 function playNotes(notes, noteDuration = 0.52) {
+  try {
   const ctx = getAudioCtx();
+  if (!ctx) {
+    return;
+  }
   notes.forEach((note, i) => {
     const freq = NOTE_FREQ[note];
     if (!freq) return;
@@ -446,6 +512,19 @@ function playNotes(notes, noteDuration = 0.52) {
     osc.start(t);
     osc.stop(t + noteDuration + 0.1);
   });
+  } catch (_err) {
+    // Audio errors should never block gameplay actions.
+  }
+}
+
+function playUnlockSuccessSound() {
+  // A short ascending triad gives immediate positive feedback for lock unlocks.
+  playNotes(["C5", "E5", "G5"], 0.13);
+}
+
+function playClueUnlockedSound() {
+  // Distinct single-note ding when a new clue is revealed.
+  playNotes(["A5"], 0.18);
 }
 
 // ── Timer ──────────────────────────────────────────────────────────────────
@@ -521,7 +600,7 @@ function renderScorePanel(score, scenarioId) {
 
 async function submitLeaderboard(scenarioId, name) {
   try {
-    const response = await fetch(`/api/scenarios/${scenarioId}/leaderboard`, {
+    const response = await fetch(scenarioApiPath(scenarioId, "leaderboard"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -542,7 +621,7 @@ async function submitLeaderboard(scenarioId, name) {
 
 async function fetchLeaderboard(scenarioId) {
   try {
-    const response = await fetch(`/api/scenarios/${scenarioId}/leaderboard`);
+    const response = await fetch(scenarioApiPath(scenarioId, "leaderboard"));
     const data = await response.json();
     if (response.ok) {
       renderLeaderboard(data.leaderboard || []);
@@ -596,4 +675,18 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function getClueIds(clues) {
+  if (!Array.isArray(clues)) {
+    return [];
+  }
+  return clues
+    .map((clue) => clue?.id)
+    .filter((id) => typeof id === "string");
+}
+
+function scenarioApiPath(scenarioId, endpoint) {
+  const encodedScenarioId = encodeURIComponent(String(scenarioId || ""));
+  return `/api/scenarios/${encodedScenarioId}/${endpoint}`;
 }

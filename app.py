@@ -64,11 +64,9 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {
                 "id": "riddle-me-this",
                 "name": "Riddle Me This",
-                "prompt": "Enter the 4-digit code.",
+                "prompt": "Enter the code.",
                 "code": "2023",
                 "input_length": 4,
-                "clue": "Kitchen puzzle solved.",
-                "unlock_message": "Nice solve.",
             },
             {
                 "id": "stoppers",
@@ -76,8 +74,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Enter the 5-letter code.",
                 "code": "WINES",
                 "input_length": 5,
-                "clue": "Kitchen puzzle solved.",
-                "unlock_message": "Nice solve.",
             },
             {
                 "id": "drink-up",
@@ -85,8 +81,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Enter the 4-digit code.",
                 "code": "1324",
                 "input_length": 4,
-                "clue": "Kitchen puzzle solved.",
-                "unlock_message": "Nice solve.",
             },
             {
                 "id": "alpha-omega",
@@ -94,8 +88,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Enter the code.",
                 "code": "scrubs",
                 "input_length": 6,
-                "clue": "Detective puzzle solved.",
-                "unlock_message": "Clue connected.",
             },
             {
                 "id": "fashion",
@@ -103,8 +95,8 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Jesse has absolutely no fashion sense. He always wears the same color. If you threw away all of his other colors, he probably wouldn't even notice!",
                 "code": "SPIN",
                 "input_length": 4,
-                "clue": "Detective puzzle solved.",
-                "unlock_message": "I think he had trackers on his important items. See if you can track him with some weird app that he used to use.",
+                "clue": "I think he had trackers on his important items. He used some strange app like 'Death 180' or something like that.",
+                "clue_linked_id": "heard-that",
             },
             {
                 "id": "heard-that",
@@ -112,8 +104,8 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Enter the 4-letter code.",
                 "code": "POOR",
                 "input_length": 4,
-                "clue": "Detective puzzle solved.",
-                "unlock_message": "There was a different tracking tool he used as well. I wonder what it was for.",
+                "clue": "There was a different tracking tool he used as well. I wonder if you cand FIND it.",
+                "clue_linked_id": "that-tracks",
             },
             {
                 "id": "that-tracks",
@@ -121,8 +113,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Enter the 5-letter code.",
                 "code": "STARS",
                 "input_length": 5,
-                "clue": "Detective puzzle solved.",
-                "unlock_message": "Clue connected.",
             },
             {
                 "id": "cubers",
@@ -497,16 +487,17 @@ def create_app() -> Flask:
         attempts[lock_id] = attempts.get(lock_id, 0) + 1
 
         if code.upper() == lock["code"].upper():
+            unlock_message = str(lock.get("unlock_message", "")).strip()
             _unlock_lock(scenario, state, lock, code)
 
             _save_state(scenario_id, state)
-            return jsonify(
-                {
-                    "success": True,
-                    "message": lock["unlock_message"],
-                    "state": _build_state_payload(scenario_id, scenario),
-                }
-            )
+            response_payload: dict[str, Any] = {
+                "success": True,
+                "state": _build_state_payload(scenario_id, scenario),
+            }
+            if unlock_message:
+                response_payload["message"] = unlock_message
+            return jsonify(response_payload)
 
         if attempts[lock_id] >= lock.get("hint_after_failures", 999):
             _add_clue(
@@ -776,25 +767,29 @@ def _motion_matches_lock(lock: dict[str, Any], body: dict[str, Any]) -> bool:
 def _unlock_lock(scenario: dict[str, Any], state: dict[str, Any], lock: dict[str, Any], solved_with: str) -> None:
     lock_id = lock["id"]
     unlocked_at = _now_iso()
+    unlock_message = str(lock.get("unlock_message", "")).strip()
     state["unlocked"][lock_id] = {
         "code": solved_with,
         "unlocked_at": unlocked_at,
     }
-    state["unlocked_history"].append(
-        {
-            "lock_id": lock_id,
-            "lock_name": lock["name"],
-            "code": solved_with,
-            "unlocked_at": unlocked_at,
-            "message": lock["unlock_message"],
-        }
-    )
-    _add_clue(
-        state,
-        clue_id=f"lock:{lock_id}",
-        text=str(lock.get("clue") or f"Unlocked {lock['name']}"),
-        source=f"Unlocked {lock['name']}",
-    )
+    history_entry: dict[str, Any] = {
+        "lock_id": lock_id,
+        "lock_name": lock["name"],
+        "code": solved_with,
+        "unlocked_at": unlocked_at,
+    }
+    if unlock_message:
+        history_entry["message"] = unlock_message
+    state["unlocked_history"].append(history_entry)
+    lock_clue = lock.get("clue")
+    if isinstance(lock_clue, str) and lock_clue.strip():
+        _add_clue(
+            state,
+            clue_id=f"lock:{lock_id}",
+            text=lock_clue,
+            source=f"Unlocked {lock['name']}",
+            linked_lock_id=str(lock.get("clue_linked_id") or "").strip() or None,
+        )
     _add_group_completion_clues(scenario, state)
 
     if len(state["unlocked"]) == len(scenario["locks"]):
@@ -857,7 +852,13 @@ def _process_motion_event(body: dict[str, Any]) -> None:
             return
 
 
-def _add_clue(state: dict[str, Any], clue_id: str, text: str, source: str) -> None:
+def _add_clue(
+    state: dict[str, Any],
+    clue_id: str,
+    text: str,
+    source: str,
+    linked_lock_id: str | None = None,
+) -> None:
     if any(existing["id"] == clue_id for existing in state["clues"]):
         return
     state["clues"].append(
@@ -866,8 +867,20 @@ def _add_clue(state: dict[str, Any], clue_id: str, text: str, source: str) -> No
             "text": text,
             "source": source,
             "revealed_at": _now_iso(),
+            "linked_lock_id": linked_lock_id,
         }
     )
+
+
+def _visible_clues(state: dict[str, Any]) -> list[dict[str, Any]]:
+    visible: list[dict[str, Any]] = []
+    unlocked_ids = set(state["unlocked"].keys())
+    for clue in state["clues"]:
+        linked_lock_id = clue.get("linked_lock_id")
+        if isinstance(linked_lock_id, str) and linked_lock_id in unlocked_ids:
+            continue
+        visible.append(clue)
+    return visible
 
 
 def _calc_score(state: dict[str, Any], scenario: dict[str, Any]) -> dict[str, Any] | None:
@@ -925,7 +938,7 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
             {
                 "id": lock_id,
                 "name": lock["name"],
-                "prompt": lock["prompt"],
+                "prompt": lock.get("prompt"),
                 "input_type": input_type,
                 "input_length": lock.get("input_length") if input_type == "code" else None,
                 "status": "unlocked" if unlocked_data else "locked",
@@ -974,7 +987,7 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
                 for group in unlock_groups
             ],
             "locks": locks_payload,
-            "clues": state["clues"],
+            "clues": _visible_clues(state),
             "unlocked_history": state["unlocked_history"],
             "score": score,
         },
