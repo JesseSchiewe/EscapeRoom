@@ -287,8 +287,8 @@ function renderLocks(progressState) {
     }
 
     if (isCurrent && lock.status === "locked") {
-      if (lock.input_type === "spell" || lock.input_type === "pose") {
-        const helper = `Waiting for ${lock.input_type} event from external md`;
+      if (lock.input_type !== "code") {
+        const helper = `Waiting for ${lock.input_type} event from external source.`;
         const motionHint = document.createElement("p");
         motionHint.className = "meta";
         motionHint.textContent = helper;

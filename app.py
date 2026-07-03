@@ -55,6 +55,11 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "lock_ids": ["s4"],
             },
             {
+                "id": "music",
+                "name": "Music",
+                "lock_ids": ["elton"],
+            },
+            {
                 "id": "finale",
                 "name": "Finale",
                 "lock_ids": ["strike"],
@@ -166,6 +171,17 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "spell": "accio",
                 "image_url": "/static/images/SpellMovements.png",
                 "unlock_message": "Spell accepted.",
+            },
+            {
+                "id": "elton",
+                "name": "Elton",
+                "prompt": "Wimoweh! Starting on C, where do the lions sleep tonight?",
+                "input_type": "note_sequence",
+                "sounds": ["C4", "D4", "E4", "D4", "E4", "F4", "E4", "D4"],
+                "hint_after_failures": 2,
+                "hint_text": "Try playing the melody on the piano: C D E D E F E D.",
+                "note_sequence": ["C", "D", "E", "D", "E", "F", "E", "D"],
+                "unlock_message": "The melody resonates. Something shifts in the room.",
             },
             {
                 "id": "strike",
@@ -670,6 +686,11 @@ def _validate_motion_event(body: dict[str, Any]) -> str | None:
             return "pose_detected payload must include an integer held_ms."
         return None
 
+    if event_name == "piano_note":
+        if not isinstance(payload.get("note"), str) or not payload["note"].strip():
+            return "piano_note payload must include a non-empty note string."
+        return None
+
     return "Unsupported event_name."
 
 
@@ -681,6 +702,7 @@ def _init_state(scenario_id: str) -> None:
         "unlocked": {},
         "unlocked_history": [],
         "clues": [],
+        "motion_sequences": {},
     }
     if _scenario_uses_shared_state(scenario_id):
         ROOM_STATES[scenario_id] = state
@@ -793,9 +815,85 @@ def _active_lock_ids(scenario: dict[str, Any], state: dict[str, Any]) -> list[st
 
 def _lock_input_type(lock: dict[str, Any]) -> str:
     input_type = str(lock.get("input_type", "code")).lower()
-    if input_type in {"code", "spell", "pose"}:
+    if input_type in {"code", "spell", "pose", "note_sequence"}:
         return input_type
     return "code"
+
+
+def _normalize_note_name(value: str) -> str:
+    trimmed = value.strip().upper()
+    if not trimmed:
+        return ""
+
+    # Keep only musical note characters and strip octave digits like C4.
+    note = "".join(character for character in trimmed if character in {"A", "B", "C", "D", "E", "F", "G", "#", "B"})
+    if not note:
+        return ""
+
+    # Support common flat notation by converting to equivalent sharps.
+    enharmonic = {
+        "DB": "C#",
+        "EB": "D#",
+        "GB": "F#",
+        "AB": "G#",
+        "BB": "A#",
+    }
+    return enharmonic.get(note, note)
+
+
+def _process_note_sequence_event(
+    state: dict[str, Any],
+    lock: dict[str, Any],
+    body: dict[str, Any],
+) -> tuple[bool, str | None]:
+    if str(body.get("event_name", "")) != "piano_note":
+        return (False, None)
+
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        return (False, None)
+
+    played_note = _normalize_note_name(str(payload.get("note", "")))
+    if not played_note:
+        return (False, None)
+
+    raw_expected = lock.get("note_sequence")
+    if not isinstance(raw_expected, list):
+        return (False, None)
+
+    expected_notes = [
+        _normalize_note_name(str(note))
+        for note in raw_expected
+        if isinstance(note, str) and _normalize_note_name(note)
+    ]
+    if not expected_notes:
+        return (False, None)
+
+    motion_sequences = state.setdefault("motion_sequences", {})
+    lock_id = lock["id"]
+    if not isinstance(motion_sequences, dict):
+        return (False, None)
+
+    progress = motion_sequences.get(lock_id, [])
+    if not isinstance(progress, list):
+        progress = []
+
+    progress.append(played_note)
+    if len(progress) > len(expected_notes):
+        progress = progress[-len(expected_notes):]
+
+    # Maintain the longest valid prefix of the expected melody.
+    while progress and progress != expected_notes[:len(progress)]:
+        progress = progress[1:]
+
+    motion_sequences[lock_id] = progress
+
+    if progress == expected_notes:
+        motion_sequences[lock_id] = []
+        solved_with = " ".join(expected_notes)
+        return (True, solved_with)
+
+    return (False, None)
 
 
 def _normalize_motion_text(value: str) -> str:
@@ -836,6 +934,9 @@ def _motion_matches_lock(lock: dict[str, Any], body: dict[str, Any]) -> bool:
                 if expected_value
             )
         )
+
+    if input_type == "note_sequence":
+        return event_name == "piano_note"
 
     return False
 
@@ -912,6 +1013,16 @@ def _process_motion_event(body: dict[str, Any]) -> None:
             lock = _find_lock(scenario, active_lock_id)
             if not lock:
                 continue
+
+            if _lock_input_type(lock) == "note_sequence":
+                matched, solved_with = _process_note_sequence_event(state, lock, body)
+                _save_state(scenario_id, state)
+                if matched:
+                    _unlock_lock(scenario, state, lock, solved_with or "NOTE_SEQUENCE")
+                    _save_state(scenario_id, state)
+                    return
+                continue
+
             if not _motion_matches_lock(lock, body):
                 continue
 

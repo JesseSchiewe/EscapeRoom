@@ -66,6 +66,7 @@ Supported event payloads:
 
 - `spell_detected`: `payload.spell_name`, `payload.tracking_id`
 - `pose_detected`: `payload.pose_name`, `payload.tracking_ids`, `payload.held_ms`
+- `piano_note`: `payload.note`
 
 Example spell event:
 
@@ -93,6 +94,40 @@ Example pose event:
 	}
 }
 ```
+
+Example piano note event:
+
+```json
+{
+	"scenario_id": "wwjd",
+	"event_name": "piano_note",
+	"timestamp_ms": 1710000000002,
+	"payload": {
+		"note": "C4"
+	}
+}
+```
+
+### MIDI Piano Bridge (USB)
+
+You can forward MIDI key presses from a USB piano into the motion webhook.
+
+1. Install dependencies from `requirements.txt`.
+2. List available MIDI ports:
+
+	```bash
+	python resources/piano_bridge.py --list-ports
+	```
+
+3. Start the bridge (replace port name if needed):
+
+	```bash
+	python resources/piano_bridge.py --scenario-id wwjd --port "Your MIDI Port Name"
+	```
+
+The WWJD scenario now includes a lock named Elton that unlocks when this note sequence is played:
+
+`C D E D E F G E D`
 
 ## Unlock Groups
 
