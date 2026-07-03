@@ -64,28 +64,32 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {
                 "id": "riddle-me-this",
                 "name": "Riddle Me This",
-                "prompt": "Enter the code.",
+                "hint_after_failures": 2,
+                "hint_text": "The answer is a year.",
                 "code": "2023",
                 "input_length": 4,
             },
             {
                 "id": "stoppers",
                 "name": "Stoppers",
-                "prompt": "Enter the 5-letter code.",
+                "hint_after_failures": 2,
+                "hint_text": "Arrange the corks to spell a word.",
                 "code": "WINES",
                 "input_length": 5,
             },
             {
                 "id": "drink-up",
                 "name": "Who is drinking what?",
-                "prompt": "Enter the 4-digit code.",
+                "hint_after_failures": 2,
+                "hint_text": "Figure out who is drinking what, find the corresponding number, and enter the numbers in the right order.",
                 "code": "1324",
                 "input_length": 4,
             },
             {
                 "id": "alpha-omega",
                 "name": "Alpha Omega",
-                "prompt": "Enter the code.",
+                "hint_after_failures": 2,
+                "hint_text": "Solve the paper puzzle and then use the phone to find the code.",
                 "code": "scrubs",
                 "input_length": 6,
             },
@@ -101,7 +105,8 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {
                 "id": "heard-that",
                 "name": "Heard That",
-                "prompt": "Enter the 4-letter code.",
+                "hint_after_failures": 2,
+                "hint_text": "See if you can track it via sound using a tracking app on the phone.",
                 "code": "POOR",
                 "input_length": 4,
                 "clue": "There was a different tracking tool he used as well. I wonder if you cand FIND it.",
@@ -110,18 +115,21 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             {
                 "id": "that-tracks",
                 "name": "That Tracks",
-                "prompt": "Enter the 5-letter code.",
+                "hint_after_failures": 2,
+                "hint_text": "Use Find My Friends on the phone to locate the item.",
                 "code": "STARS",
                 "input_length": 5,
             },
             {
                 "id": "cubers",
                 "name": "Cubers",
-                "prompt": "Enter the 4-letter code.",
+                "hint_after_failures": 2,
+                "hint_text": "Solve the white layer of the Rubiks cube first. Make sure the corners line up with the correct colors. If all else fails, guess the combination of letters.",
                 "code": "TUBE",
                 "input_length": 4,
-                "clue": "Great cubing, now check the scanner...",
-                "unlock_message": "Great cubing, now check the scanner...",
+                "clue": "Great cubing, now check the scanner... then stand on the golden spot and cast the right spell to get to the next chapter of this tale!",
+                "clue_linked_id": "s1",
+                "unlock_message": "Great cubing, now check the scanner.",
             },
             {
                 "id": "s1",
@@ -129,17 +137,15 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Too large to fit through the keyhole? Great things sometimes must become small.",
                 "input_type": "spell",
                 "spell": "reducio",
-                "clue": "Too large to fit through the keyhole? Great things sometimes must become small.",
                 "image_url": "/static/images/SpellMovements.png",
                 "unlock_message": "Spell accepted.",
             },
             {
                 "id": "s2",
                 "name": "S2",
-                "prompt": "A charging foe need not be defeated. Simply stop it in its tracks.",
+                "prompt": "An unforgivable way to stop your opponent dead in their tracks.",
                 "input_type": "spell",
-                "spell": "stupefy",
-                "clue": "A charging foe need not be defeated. Simply stop it in its tracks.",
+                "spell": "avada kedavra",
                 "image_url": "/static/images/SpellMovements.png",
                 "unlock_message": "Spell accepted.",
             },
@@ -149,7 +155,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Strength remains, magic remains, but one thing must leave its master's hand.",
                 "input_type": "spell",
                 "spell": "expelliarmus",
-                "clue": "Strength remains, magic remains, but one thing must leave its master's hand.",
                 "image_url": "/static/images/SpellMovements.png",
                 "unlock_message": "Spell accepted.",
             },
@@ -159,7 +164,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "It is so far, but you need it near. Cast the spell to make it appear.",
                 "input_type": "spell",
                 "spell": "accio",
-                "clue": "It is so far, but you need it near. Cast the spell to make it appear.",
                 "image_url": "/static/images/SpellMovements.png",
                 "unlock_message": "Spell accepted.",
             },
@@ -169,7 +173,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "prompt": "Jesse never liked to dance. He would just stand awkwardly in front of a window striking what I like to call an 'x' pose.",
                 "input_type": "pose",
                 "pose_name": "x pose",
-                "clue": "Jesse never liked to dance. He would just stand awkwardly in front of a window striking what I like to call an 'x' pose.",
                 "unlock_message": "Wow, you are quite the dancer!",
             },
         ],
@@ -435,6 +438,70 @@ def create_app() -> Flask:
             _init_state(scenario_id)
         return jsonify(_build_state_payload(scenario_id, scenario))
 
+    @app.post("/api/admin-mode")
+    def admin_mode():
+        body = request.get_json(silent=True) or {}
+        enabled = body.get("enabled")
+
+        if enabled is False:
+            session[_admin_mode_key()] = False
+            session.modified = True
+            return jsonify({"admin_mode": False})
+
+        if enabled is True:
+            passcode = str(body.get("passcode", ""))
+            expected_passcode = os.getenv("ADMIN_PASSCODE", "2525")
+            if passcode != expected_passcode:
+                return jsonify({"error": "Invalid admin passcode."}), 403
+
+            session[_admin_mode_key()] = True
+            session.modified = True
+            return jsonify({"admin_mode": True})
+
+        return jsonify({"error": "enabled must be true or false."}), 400
+
+    @app.post("/api/scenarios/<scenario_id>/admin-unlock")
+    def admin_unlock(scenario_id: str):
+        if not _is_admin_mode_enabled():
+            return jsonify({"error": "Admin mode is not enabled."}), 403
+
+        scenario = SCENARIOS.get(scenario_id)
+        if not scenario:
+            return jsonify({"error": "Scenario not found."}), 404
+
+        if not _get_state(scenario_id):
+            _init_state(scenario_id)
+
+        payload = request.get_json(silent=True) or {}
+        lock_id = str(payload.get("lock_id", "")).strip()
+        if not lock_id:
+            return jsonify({"error": "lock_id is required."}), 400
+
+        state = _get_state(scenario_id)
+        assert state is not None
+
+        lock = _find_lock(scenario, lock_id)
+        if not lock:
+            return jsonify({"error": "Lock not found."}), 404
+
+        if lock_id in state["unlocked"]:
+            return jsonify(
+                {
+                    "message": "This lock is already unlocked.",
+                    "state": _build_state_payload(scenario_id, scenario),
+                }
+            )
+
+        _unlock_lock(scenario, state, lock, "ADMIN")
+        _save_state(scenario_id, state)
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Admin completed {lock['name']}.",
+                "state": _build_state_payload(scenario_id, scenario),
+            }
+        )
+
     @app.post("/api/scenarios/<scenario_id>/unlock")
     def unlock(scenario_id: str):
         scenario = SCENARIOS.get(scenario_id)
@@ -505,6 +572,7 @@ def create_app() -> Flask:
                 clue_id=f"hint:{lock_id}",
                 text=lock["hint_text"],
                 source=f"Hint for {lock['name']}",
+                linked_lock_id=lock_id,
             )
 
         _save_state(scenario_id, state)
@@ -557,6 +625,14 @@ def create_app() -> Flask:
 
 def _state_key(scenario_id: str) -> str:
     return f"escapejs:{scenario_id}"
+
+
+def _admin_mode_key() -> str:
+    return "escapejs:admin_mode"
+
+
+def _is_admin_mode_enabled() -> bool:
+    return bool(session.get(_admin_mode_key(), False))
 
 
 def _now_iso() -> str:
@@ -872,13 +948,26 @@ def _add_clue(
     )
 
 
-def _visible_clues(state: dict[str, Any]) -> list[dict[str, Any]]:
+def _visible_clues(state: dict[str, Any], scenario: dict[str, Any]) -> list[dict[str, Any]]:
     visible: list[dict[str, Any]] = []
     unlocked_ids = set(state["unlocked"].keys())
+    unlock_groups = _unlock_groups(scenario)
+    group_index_by_id = {group["id"]: index for index, group in enumerate(unlock_groups)}
+
     for clue in state["clues"]:
         linked_lock_id = clue.get("linked_lock_id")
         if isinstance(linked_lock_id, str) and linked_lock_id in unlocked_ids:
             continue
+
+        clue_id = clue.get("id")
+        if isinstance(clue_id, str) and clue_id.startswith("group:") and clue_id.endswith(":complete"):
+            group_id = clue_id[len("group:"):-len(":complete")]
+            group_index = group_index_by_id.get(group_id)
+            if isinstance(group_index, int) and group_index + 1 < len(unlock_groups):
+                next_group = unlock_groups[group_index + 1]
+                if any(lock_id in unlocked_ids for lock_id in next_group["lock_ids"]):
+                    continue
+
         visible.append(clue)
     return visible
 
@@ -966,6 +1055,7 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
         },
         "state": {
             "started_at": state["started_at"],
+            "admin_mode": _is_admin_mode_enabled(),
             "completed": state["completed"],
             "unlocked_count": unlocked_count,
             "progress_pct": progress_pct,
@@ -987,7 +1077,7 @@ def _build_state_payload(scenario_id: str, scenario: dict[str, Any]) -> dict[str
                 for group in unlock_groups
             ],
             "locks": locks_payload,
-            "clues": _visible_clues(state),
+            "clues": _visible_clues(state, scenario),
             "unlocked_history": state["unlocked_history"],
             "score": score,
         },

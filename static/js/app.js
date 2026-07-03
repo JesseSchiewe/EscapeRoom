@@ -4,6 +4,7 @@ const state = {
   activePayload: null,
   lastUnlockedCount: null,
   lastVisibleClueIds: [],
+  adminMode: false,
   timer: { interval: null, limitSeconds: 0, startedAt: null, expired: false },
   refreshInterval: null,
   isTypingCode: false,
@@ -35,9 +36,11 @@ const leaderboardBodyEl = document.getElementById("leaderboard-body");
 const leaderboardEmptyEl = document.getElementById("leaderboard-empty");
 const scenariosSectionEl = document.querySelector(".scenarios");
 const homeBtnEl = document.getElementById("home-btn");
+const adminBtnEl = document.getElementById("admin-btn");
 const layoutRootEl = document.getElementById("layout-root");
 
 homeBtnEl.addEventListener("click", goHome);
+adminBtnEl?.addEventListener("click", onAdminButtonClick);
 
 init();
 
@@ -107,8 +110,11 @@ async function startScenario(scenarioId) {
     state.activePayload = payload;
     state.lastUnlockedCount = payload?.state?.unlocked_count ?? 0;
     state.lastVisibleClueIds = getClueIds(payload?.state?.clues);
+    state.adminMode = Boolean(payload?.state?.admin_mode);
     scenariosSectionEl.classList.add("hidden");
     homeBtnEl.classList.remove("hidden");
+    adminBtnEl?.classList.remove("hidden");
+    updateAdminButton();
     layoutRootEl?.classList.add("playing");
     startAutoRefresh();
     renderGame();
@@ -129,6 +135,7 @@ function goHome() {
   gameAreaEl.classList.add("hidden");
   scorePanelEl.classList.add("hidden");
   homeBtnEl.classList.add("hidden");
+  adminBtnEl?.classList.add("hidden");
   layoutRootEl?.classList.remove("playing");
   scenariosSectionEl.classList.remove("hidden");
 }
@@ -144,6 +151,8 @@ function renderGame() {
   const scenario = payload.scenario;
   const progress = payload.state;
   const previousUnlockedCount = state.lastUnlockedCount;
+  state.adminMode = Boolean(progress.admin_mode);
+  updateAdminButton();
 
   titleEl.textContent = scenario.title;
   descriptionEl.textContent = scenario.description;
@@ -189,9 +198,25 @@ function renderLocks(progressState) {
   locksListEl.innerHTML = "";
 
   const activeLockIds = new Set(progressState.active_lock_ids || []);
+  const activeGroupId = progressState.active_group?.id || null;
+  let renderedCount = 0;
 
   progressState.locks.forEach((lock) => {
-    if (lock.status === "locked" && !activeLockIds.has(lock.id)) {
+    if (!state.adminMode) {
+      // Keep the Locks panel focused on the current unlock group only.
+      if (activeGroupId && lock.group_id !== activeGroupId) {
+        return;
+      }
+
+      if (!activeGroupId && !progressState.completed) {
+        return;
+      }
+
+      if (lock.status === "locked" && !activeLockIds.has(lock.id)) {
+        return;
+      }
+    } else if (lock.status === "unlocked") {
+      // In admin mode, focus on remaining locks that can be completed instantly.
       return;
     }
 
@@ -245,6 +270,20 @@ function renderLocks(progressState) {
       soundBtn.setAttribute("aria-label", "Play musical clue");
       soundBtn.addEventListener("click", () => playNotes(lock.sounds));
       card.appendChild(soundBtn);
+    }
+
+    if (state.adminMode && lock.status === "locked") {
+      const adminCompleteBtn = document.createElement("button");
+      adminCompleteBtn.className = "unlock-btn";
+      adminCompleteBtn.type = "button";
+      adminCompleteBtn.textContent = "Complete (Admin)";
+      adminCompleteBtn.addEventListener("click", async () => {
+        await submitAdminUnlock(lock.id);
+      });
+      card.appendChild(adminCompleteBtn);
+      locksListEl.appendChild(card);
+      renderedCount += 1;
+      return;
     }
 
     if (isCurrent && lock.status === "locked") {
@@ -319,7 +358,17 @@ function renderLocks(progressState) {
     }
 
     locksListEl.appendChild(card);
+    renderedCount += 1;
   });
+
+  if (renderedCount === 0) {
+    const emptyItem = document.createElement("p");
+    emptyItem.className = "meta";
+    emptyItem.textContent = progressState.completed
+      ? "All lock groups complete."
+      : "Current lock group complete. Waiting for the next group...";
+    locksListEl.appendChild(emptyItem);
+  }
 }
 
 function startAutoRefresh() {
@@ -364,7 +413,7 @@ async function refreshScenarioState() {
 function renderClues(clues) {
   clueListEl.innerHTML = "";
   if (!Array.isArray(clues) || clues.length === 0) {
-    clueListEl.innerHTML = "<li>No clues yet. Incorrect attempts may reveal hints.</li>";
+    clueListEl.innerHTML = "<li>No current clues. Incorrect attempts may reveal hints.</li>";
     return;
   }
 
@@ -446,6 +495,73 @@ async function submitUnlock(lockId, code) {
   } catch (err) {
     showToast(err instanceof Error ? err.message : "Unable to process code.", "error");
   }
+}
+
+async function submitAdminUnlock(lockId) {
+  if (!state.activeScenarioId || !state.adminMode) {
+    return;
+  }
+
+  try {
+    const response = await fetch(scenarioApiPath(state.activeScenarioId, "admin-unlock"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lock_id: lockId }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to complete lock in admin mode.");
+    }
+
+    state.activePayload = payload.state ? payload.state : payload;
+    renderGame();
+    showToast(payload.message || "Lock completed in Admin mode.", "ok");
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "Unable to complete lock in admin mode.", "error");
+  }
+}
+
+async function onAdminButtonClick() {
+  if (!state.adminMode) {
+    const passcode = window.prompt("Enter admin passcode", "");
+    if (passcode === null) {
+      return;
+    }
+    await setAdminMode(true, passcode);
+    return;
+  }
+
+  await setAdminMode(false);
+}
+
+async function setAdminMode(enabled, passcode = "") {
+  try {
+    const response = await fetch("/api/admin-mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, passcode }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to update admin mode.");
+    }
+
+    state.adminMode = Boolean(payload.admin_mode);
+    updateAdminButton();
+    if (state.activeScenarioId) {
+      await refreshScenarioState();
+    }
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : "Unable to update admin mode.", "error");
+  }
+}
+
+function updateAdminButton() {
+  if (!adminBtnEl) {
+    return;
+  }
+  adminBtnEl.classList.toggle("admin-on", state.adminMode);
+  adminBtnEl.textContent = state.adminMode ? "🔓 Admin On" : "🔒 Admin";
 }
 
 function showToast(message, type) {

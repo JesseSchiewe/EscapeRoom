@@ -80,6 +80,12 @@ body {
   flex-wrap: wrap;
 }
 
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .home-btn {
   background: transparent;
   border: 1px solid var(--accent);
@@ -98,6 +104,12 @@ body {
 .home-btn:hover {
   background: rgba(0, 229, 255, 0.1);
   box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+}
+
+.home-btn.admin-on {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: rgba(0, 255, 159, 0.12);
 }
 
 h1,
@@ -163,10 +175,17 @@ p {
   display: grid;
   justify-items: end;
   gap: 0.25rem;
+  font-size: 0.75rem;
 }
 
 .lock-card-meta .meta {
   text-align: right;
+  font-size: 0.72rem;
+}
+
+.lock-card-meta .status-pill {
+  font-size: 0.68rem;
+  padding: 0.16rem 0.45rem;
 }
 
 .scenario-card h3,
