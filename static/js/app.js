@@ -38,9 +38,16 @@ const scenariosSectionEl = document.querySelector(".scenarios");
 const homeBtnEl = document.getElementById("home-btn");
 const adminBtnEl = document.getElementById("admin-btn");
 const layoutRootEl = document.getElementById("layout-root");
+const scenarioLeaderboardPanelEl = document.getElementById("scenario-leaderboard-panel");
+const scenarioLeaderboardTitleEl = document.getElementById("scenario-leaderboard-title");
+const scenarioLeaderboardSubtitleEl = document.getElementById("scenario-leaderboard-subtitle");
+const scenarioLeaderboardCloseBtnEl = document.getElementById("scenario-leaderboard-close");
+const scenarioLeaderboardBodyEl = document.getElementById("scenario-leaderboard-body");
+const scenarioLeaderboardEmptyEl = document.getElementById("scenario-leaderboard-empty");
 
 homeBtnEl.addEventListener("click", goHome);
 adminBtnEl?.addEventListener("click", onAdminButtonClick);
+scenarioLeaderboardCloseBtnEl?.addEventListener("click", hideScenarioLeaderboard);
 
 init();
 
@@ -70,7 +77,10 @@ function renderScenarioList() {
       <h3>${escapeHtml(scenario.title)}</h3>
       <p>${escapeHtml(scenario.description)}</p>
       <p class="meta">Difficulty: ${escapeHtml(scenario.difficulty)} | Locks: ${scenario.total_locks}</p>
-      <button class="select-btn" data-scenario-id="${scenario.id}">Play This Scenario</button>
+      <div class="scenario-card-actions">
+        <button class="select-btn" data-scenario-id="${scenario.id}">Play This Scenario</button>
+        <button class="leaderboard-btn" data-leaderboard-scenario-id="${scenario.id}">View Leaderboard</button>
+      </div>
     `;
     scenarioListEl.appendChild(card);
   });
@@ -87,6 +97,22 @@ function renderScenarioList() {
       }
 
       await startScenario(scenarioId);
+    });
+  });
+
+  scenarioListEl.querySelectorAll(".leaderboard-btn").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLButtonElement)) {
+        return;
+      }
+      const scenarioId = target.dataset.leaderboardScenarioId;
+      if (!scenarioId) {
+        return;
+      }
+
+      const scenario = state.scenarios.find((item) => item.id === scenarioId);
+      await showScenarioLeaderboard(scenarioId, scenario?.title || "Leaderboard");
     });
   });
 }
@@ -137,7 +163,23 @@ function goHome() {
   homeBtnEl.classList.add("hidden");
   adminBtnEl?.classList.add("hidden");
   layoutRootEl?.classList.remove("playing");
+  hideScenarioLeaderboard();
   scenariosSectionEl.classList.remove("hidden");
+}
+
+async function showScenarioLeaderboard(scenarioId, scenarioTitle) {
+  if (!scenarioLeaderboardPanelEl || !scenarioLeaderboardTitleEl || !scenarioLeaderboardSubtitleEl) {
+    return;
+  }
+
+  scenarioLeaderboardTitleEl.textContent = `${scenarioTitle} Leaderboard`;
+  scenarioLeaderboardSubtitleEl.textContent = `Top scores for ${scenarioTitle}.`;
+  scenarioLeaderboardPanelEl.classList.remove("hidden");
+  await fetchLeaderboard(scenarioId, scenarioLeaderboardBodyEl, scenarioLeaderboardEmptyEl);
+}
+
+function hideScenarioLeaderboard() {
+  scenarioLeaderboardPanelEl?.classList.add("hidden");
 }
 
 function renderGame() {
@@ -711,7 +753,7 @@ function renderScorePanel(score, scenarioId) {
     await submitLeaderboard(scenarioId, name);
   };
 
-  fetchLeaderboard(scenarioId);
+  fetchLeaderboard(scenarioId, leaderboardBodyEl, leaderboardEmptyEl);
 }
 
 async function submitLeaderboard(scenarioId, name) {
@@ -729,32 +771,36 @@ async function submitLeaderboard(scenarioId, name) {
     submitFeedbackEl.classList.remove("hidden");
     submitScoreBtnEl.disabled = true;
     playerNameInputEl.disabled = true;
-    renderLeaderboard(data.leaderboard);
+    renderLeaderboard(data.leaderboard, leaderboardBodyEl, leaderboardEmptyEl);
   } catch (err) {
     showToast(err instanceof Error ? err.message : "Could not submit score.", "error");
   }
 }
 
-async function fetchLeaderboard(scenarioId) {
+async function fetchLeaderboard(scenarioId, bodyEl = leaderboardBodyEl, emptyEl = leaderboardEmptyEl) {
   try {
     const response = await fetch(scenarioApiPath(scenarioId, "leaderboard"));
     const data = await response.json();
     if (response.ok) {
-      renderLeaderboard(data.leaderboard || []);
+      renderLeaderboard(data.leaderboard || [], bodyEl, emptyEl);
     }
   } catch (_err) {
     // leaderboard is a bonus feature; ignore fetch errors
   }
 }
 
-function renderLeaderboard(entries) {
-  if (!entries || entries.length === 0) {
-    leaderboardBodyEl.innerHTML = "";
-    leaderboardEmptyEl.classList.remove("hidden");
+function renderLeaderboard(entries, bodyEl = leaderboardBodyEl, emptyEl = leaderboardEmptyEl) {
+  if (!bodyEl || !emptyEl) {
     return;
   }
-  leaderboardEmptyEl.classList.add("hidden");
-  leaderboardBodyEl.innerHTML = entries
+
+  if (!entries || entries.length === 0) {
+    bodyEl.innerHTML = "";
+    emptyEl.classList.remove("hidden");
+    return;
+  }
+  emptyEl.classList.add("hidden");
+  bodyEl.innerHTML = entries
     .map(
       (entry) =>
         `<tr>

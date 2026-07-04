@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 from typing import Any
 
 from collections import defaultdict
 from flask import Flask, jsonify, render_template, request, session
+
+LEADERBOARD_FILE = Path(__file__).resolve().with_name("resources") / "leaderboard.json"
 
 SCENARIOS: dict[str, dict[str, Any]] = {
     "wwjd": {
@@ -421,6 +425,7 @@ ROOM_STATES: dict[str, dict[str, Any]] = {}
 def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.getenv("FLASK_SECRET_KEY", "escapejs-dev-secret")
+    _load_leaderboards()
 
     @app.route("/")
     def index() -> str:
@@ -634,9 +639,7 @@ def create_app() -> Flask:
     def get_leaderboard(scenario_id: str):
         if scenario_id not in SCENARIOS:
             return jsonify({"error": "Scenario not found."}), 404
-        ranked = sorted(LEADERBOARD[scenario_id], key=lambda e: e["score"], reverse=True)
-        for i, entry in enumerate(ranked, 1):
-            entry["rank"] = i
+        ranked = _rank_leaderboard_entries(LEADERBOARD.get(scenario_id, []))
         return jsonify({"leaderboard": ranked})
 
     @app.post("/api/scenarios/<scenario_id>/leaderboard")
@@ -661,9 +664,8 @@ def create_app() -> Flask:
             "completed_at": state.get("completed_at", _now_iso()),
             "rank": 0,
         })
-        ranked = sorted(LEADERBOARD[scenario_id], key=lambda e: e["score"], reverse=True)
-        for i, entry in enumerate(ranked, 1):
-            entry["rank"] = i
+        _save_leaderboards()
+        ranked = _rank_leaderboard_entries(LEADERBOARD[scenario_id])
         return jsonify({"leaderboard": ranked, "your_score": score_data})
 
     return app
@@ -683,6 +685,78 @@ def _is_admin_mode_enabled() -> bool:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _load_leaderboards() -> None:
+    LEADERBOARD.clear()
+    if not LEADERBOARD_FILE.exists():
+        return
+
+    try:
+        raw_data = json.loads(LEADERBOARD_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+
+    if not isinstance(raw_data, dict):
+        return
+
+    for scenario_id, entries in raw_data.items():
+        if not isinstance(scenario_id, str) or not isinstance(entries, list):
+            continue
+
+        clean_entries: list[dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+
+            name = str(entry.get("name", "")).strip()
+            score = entry.get("score")
+            elapsed_seconds = entry.get("elapsed_seconds")
+            completed_at = str(entry.get("completed_at", "")).strip()
+            if not name or not isinstance(score, int) or not isinstance(elapsed_seconds, int) or not completed_at:
+                continue
+
+            clean_entries.append(
+                {
+                    "name": name,
+                    "score": score,
+                    "elapsed_seconds": elapsed_seconds,
+                    "completed_at": completed_at,
+                    "rank": 0,
+                }
+            )
+
+        if clean_entries:
+            LEADERBOARD[scenario_id] = clean_entries
+
+
+def _save_leaderboards() -> None:
+    LEADERBOARD_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        scenario_id: [
+            {
+                "name": entry["name"],
+                "score": entry["score"],
+                "elapsed_seconds": entry["elapsed_seconds"],
+                "completed_at": entry["completed_at"],
+            }
+            for entry in entries
+        ]
+        for scenario_id, entries in LEADERBOARD.items()
+        if entries
+    }
+    LEADERBOARD_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _rank_leaderboard_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranked = sorted(entries, key=lambda entry: entry["score"], reverse=True)
+    return [
+        {
+            **entry,
+            "rank": index,
+        }
+        for index, entry in enumerate(ranked, 1)
+    ]
 
 
 def _validate_motion_event(body: dict[str, Any]) -> str | None:

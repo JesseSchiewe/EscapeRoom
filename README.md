@@ -25,6 +25,7 @@ EscapeJS is a Flask-powered escape room app where players can:
 	- Number of locks solved
 	- Percentage complete
 	- Completion banner when all locks are solved
+- Persistent per-scenario leaderboards saved locally on the server
 - Motion webhook endpoint for external spell and pose detection events
 
 ## Tech Stack
@@ -155,6 +156,10 @@ Example:
 ```
 
 Scenarios without `unlock_groups` keep the original sequential progression automatically, so you can opt in only for new rooms that need grouped unlocking.
+
+## Leaderboards
+
+Each scenario keeps its own leaderboard in a local JSON file on the server. The scenario list includes a `View Leaderboard` button for each room, and completed runs can still submit scores from the mission-complete panel.
 
 ## Security Note
 
