@@ -8,6 +8,9 @@ const state = {
   timer: { interval: null, limitSeconds: 0, startedAt: null, expired: false },
   refreshInterval: null,
   isTypingCode: false,
+  isTypingLeaderboardName: false,
+  lastActiveLockIds: [],
+  hasAutoScrolledScorePanel: false,
 };
 
 const scenarioListEl = document.getElementById("scenario-list");
@@ -37,6 +40,7 @@ const leaderboardEmptyEl = document.getElementById("leaderboard-empty");
 const scenariosSectionEl = document.querySelector(".scenarios");
 const homeBtnEl = document.getElementById("home-btn");
 const adminBtnEl = document.getElementById("admin-btn");
+const soundEnableBtnEl = document.getElementById("sound-enable-btn");
 const layoutRootEl = document.getElementById("layout-root");
 const scenarioLeaderboardPanelEl = document.getElementById("scenario-leaderboard-panel");
 const scenarioLeaderboardTitleEl = document.getElementById("scenario-leaderboard-title");
@@ -136,6 +140,10 @@ async function startScenario(scenarioId) {
     state.activePayload = payload;
     state.lastUnlockedCount = payload?.state?.unlocked_count ?? 0;
     state.lastVisibleClueIds = getClueIds(payload?.state?.clues);
+    state.lastActiveLockIds = Array.isArray(payload?.state?.active_lock_ids)
+      ? [...payload.state.active_lock_ids]
+      : [];
+    state.hasAutoScrolledScorePanel = false;
     state.adminMode = Boolean(payload?.state?.admin_mode);
     scenariosSectionEl.classList.add("hidden");
     homeBtnEl.classList.remove("hidden");
@@ -157,6 +165,9 @@ function goHome() {
   state.activePayload = null;
   state.lastUnlockedCount = null;
   state.lastVisibleClueIds = [];
+  state.lastActiveLockIds = [];
+  state.isTypingLeaderboardName = false;
+  state.hasAutoScrolledScorePanel = false;
   state.timer.expired = false;
   gameAreaEl.classList.add("hidden");
   scorePanelEl.classList.add("hidden");
@@ -212,6 +223,10 @@ function renderGame() {
     if (progress.score) {
       renderScorePanel(progress.score, state.activeScenarioId);
     }
+    if (!state.hasAutoScrolledScorePanel) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      state.hasAutoScrolledScorePanel = true;
+    }
   }
 
   renderLocks(progress);
@@ -226,11 +241,21 @@ function renderGame() {
   }
   state.lastVisibleClueIds = currentClueIds;
 
+  const currentActiveLockIds = Array.isArray(progress.active_lock_ids)
+    ? progress.active_lock_ids
+    : [];
+  const hasNewAvailableLock = currentActiveLockIds.some(
+    (lockId) => !state.lastActiveLockIds.includes(lockId)
+  );
+  state.lastActiveLockIds = [...currentActiveLockIds];
+
   if (
     typeof previousUnlockedCount === "number"
     && progress.unlocked_count > previousUnlockedCount
   ) {
     playUnlockSuccessSound();
+  } else if (hasNewAvailableLock) {
+    playLockAvailableSound();
   }
 
   state.lastUnlockedCount = progress.unlocked_count;
@@ -310,7 +335,7 @@ function renderLocks(progressState) {
       soundBtn.type = "button";
       soundBtn.textContent = "\u266a Play Clue";
       soundBtn.setAttribute("aria-label", "Play musical clue");
-      soundBtn.addEventListener("click", () => playNotes(lock.sounds));
+      soundBtn.addEventListener("click", () => playNotes(lock.sounds, 0.52, true));
       card.appendChild(soundBtn);
     }
 
@@ -436,6 +461,10 @@ async function refreshScenarioState() {
   }
 
   if (state.isTypingCode) {
+    return;
+  }
+
+  if (state.isTypingLeaderboardName) {
     return;
   }
 
@@ -629,6 +658,91 @@ const NOTE_FREQ = {
 };
 
 let _audioCtx = null;
+let _soundEnabled = false;
+let _audioUnlockAttempted = false;
+
+async function unlockAudioFromGesture(showFeedback = true) {
+  if (_soundEnabled) {
+    updateSoundEnableButton();
+    return true;
+  }
+
+  const ctx = getAudioCtx();
+  if (!ctx) {
+    return false;
+  }
+
+  try {
+    if (ctx.state === "suspended") {
+      const resumeResult = ctx.resume();
+      if (resumeResult && typeof resumeResult.then === "function") {
+        resumeResult.catch(() => {
+          // Ignore; we'll still try the priming beep in this gesture.
+        });
+      }
+    }
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(440, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.01);
+
+    _soundEnabled = true;
+    updateSoundEnableButton();
+    if (showFeedback) {
+      showToast("Sound enabled.", "ok");
+    }
+    return true;
+  } catch (_err) {
+    _audioUnlockAttempted = true;
+    updateSoundEnableButton();
+    if (showFeedback) {
+      showToast("Tap Enable Sound again to allow audio on this device.", "error");
+    }
+    return false;
+  }
+}
+
+function updateSoundEnableButton() {
+  if (!soundEnableBtnEl) {
+    return;
+  }
+
+  soundEnableBtnEl.classList.toggle("sound-on", _soundEnabled);
+  if (_soundEnabled) {
+    soundEnableBtnEl.textContent = "🔊 Sound On";
+  } else if (_audioUnlockAttempted) {
+    soundEnableBtnEl.textContent = "🔊 Enable Sound";
+  } else {
+    soundEnableBtnEl.textContent = "🔈 Enable Sound";
+  }
+}
+
+if (soundEnableBtnEl) {
+  soundEnableBtnEl.addEventListener("click", async () => {
+    const enabled = await unlockAudioFromGesture(true);
+    if (enabled) {
+      // Immediate audible confirmation on tap.
+      playNotes(["C5", "E5"], 0.09, true);
+    }
+  });
+}
+
+document.addEventListener("pointerdown", () => {
+  unlockAudioFromGesture(false);
+}, { once: true });
+
+document.addEventListener("touchstart", () => {
+  unlockAudioFromGesture(false);
+}, { once: true, passive: true });
+
+updateSoundEnableButton();
 
 function getAudioCtx() {
   try {
@@ -646,30 +760,41 @@ function getAudioCtx() {
   }
 }
 
-function playNotes(notes, noteDuration = 0.52) {
+function playNotes(notes, noteDuration = 0.52, fromUserGesture = false) {
   try {
-  const ctx = getAudioCtx();
-  if (!ctx) {
-    return;
-  }
-  notes.forEach((note, i) => {
-    const freq = NOTE_FREQ[note];
-    if (!freq) return;
-    const t = ctx.currentTime + i * noteDuration;
-    const osc = ctx.createOscillator();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(freq, t);
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.35, t + 0.008);      // attack
-    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.15);  // decay
-    gain.gain.setValueAtTime(0.12, t + noteDuration - 0.06); // sustain
-    gain.gain.linearRampToValueAtTime(0, t + noteDuration + 0.06); // release
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + noteDuration + 0.1);
-  });
+    if (!_soundEnabled) {
+      if (!fromUserGesture) {
+        return;
+      }
+      // Try once more during direct user gestures (e.g. tapping Play Clue on iPad).
+      unlockAudioFromGesture(false);
+      if (!_soundEnabled) {
+        return;
+      }
+    }
+
+    const ctx = getAudioCtx();
+    if (!ctx) {
+      return;
+    }
+    notes.forEach((note, i) => {
+      const freq = NOTE_FREQ[note];
+      if (!freq) return;
+      const t = ctx.currentTime + i * noteDuration;
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, t);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.35, t + 0.008);      // attack
+      gain.gain.exponentialRampToValueAtTime(0.12, t + 0.15);  // decay
+      gain.gain.setValueAtTime(0.12, t + noteDuration - 0.06); // sustain
+      gain.gain.linearRampToValueAtTime(0, t + noteDuration + 0.06); // release
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + noteDuration + 0.1);
+    });
   } catch (_err) {
     // Audio errors should never block gameplay actions.
   }
@@ -683,6 +808,11 @@ function playUnlockSuccessSound() {
 function playClueUnlockedSound() {
   // Distinct single-note ding when a new clue is revealed.
   playNotes(["A5"], 0.18);
+}
+
+function playLockAvailableSound() {
+  // Gentle two-note cue indicating a new lock can now be attempted.
+  playNotes(["D5", "F5"], 0.1);
 }
 
 // ── Timer ──────────────────────────────────────────────────────────────────
@@ -744,12 +874,21 @@ function renderScorePanel(score, scenarioId) {
   playerNameInputEl.disabled = false;
   playerNameInputEl.value = "";
 
+  playerNameInputEl.onfocus = () => {
+    state.isTypingLeaderboardName = true;
+  };
+  playerNameInputEl.onblur = () => {
+    state.isTypingLeaderboardName = false;
+    refreshScenarioState();
+  };
+
   submitScoreBtnEl.onclick = async () => {
     const name = playerNameInputEl.value.trim();
     if (!name) {
       showToast("Enter your name first.", "error");
       return;
     }
+    state.isTypingLeaderboardName = false;
     await submitLeaderboard(scenarioId, name);
   };
 

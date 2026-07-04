@@ -182,7 +182,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                 "name": "Abandon",
                 "hint_after_failures": 2,
                 "hint_text": "Figure out the order of events and corresponding rooms to progress.",
-                "code": "TUBE",
+                "code": "SAFE",
                 "input_length": 4,
                 "image_url": "/static/images/HouseDiagram.png",
                 "clue": "",

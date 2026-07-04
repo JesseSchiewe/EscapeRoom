@@ -112,6 +112,12 @@ body {
   background: rgba(0, 255, 159, 0.12);
 }
 
+.home-btn.sound-on {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: rgba(0, 255, 159, 0.12);
+}
+
 h1,
 h2,
 h3,
@@ -539,6 +545,7 @@ p {
 /* Score panel */
 .score-panel {
   grid-column: span 12;
+  order: -1;
 }
 
 .score-breakdown {
